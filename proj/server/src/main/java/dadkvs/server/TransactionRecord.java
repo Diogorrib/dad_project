@@ -17,8 +17,8 @@ public class TransactionRecord {
         this.read2_version = 0;
         this.prepare_key = 0;
         this.prepare_value = 0;
-	this.timestamp = -1;
-     }
+        this.timestamp = -1;
+    }
 
     public TransactionRecord(int key1, int v1, int key2, int v2, int wkey, int wval) {
         this.read1_key = key1;
@@ -27,7 +27,7 @@ public class TransactionRecord {
         this.read2_version = v2;
         this.prepare_key = wkey;
         this.prepare_value = wval;
-	this.timestamp = -1;
+        this.timestamp = -1;
     }
 
     public TransactionRecord(int key1, int v1, int key2, int v2, int wkey, int wval, int ts) {
@@ -37,7 +37,7 @@ public class TransactionRecord {
         this.read2_version = v2;
         this.prepare_key = wkey;
         this.prepare_value = wval;
-	this.timestamp = ts;
+        this.timestamp = ts;
     }
 
     // Getter and Setter methods for all fields
