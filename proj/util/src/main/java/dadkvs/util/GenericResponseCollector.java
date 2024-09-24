@@ -3,18 +3,22 @@ package dadkvs.util;
 import java.util.ArrayList;
 
 public class GenericResponseCollector<T>  {
-    ArrayList<T> collectedResponses;
+    ArrayList<T> collected_responses;
     int   received;
     int   pending;
+    boolean  target_reached;
 
     public GenericResponseCollector(ArrayList<T> responses, int maxresponses) {
-        collectedResponses = responses;
+        collected_responses = responses;
 	received = 0;
 	pending = maxresponses;
+    target_reached = false;
     }
 
     synchronized public void addResponse(T resp) {
-        collectedResponses.add(resp);
+    if (!target_reached) {
+        collected_responses.add(resp);
+    }
 	received++;
 	pending--;
 	notifyAll();
@@ -33,5 +37,6 @@ public class GenericResponseCollector<T>  {
 	    catch (InterruptedException e) {
 	    }
 	}
+    target_reached = true;
     }
 }
