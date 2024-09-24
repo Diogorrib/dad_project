@@ -26,7 +26,7 @@ public class MainLoop implements Runnable {
         this.has_work = false;
     }
 
-    public void run()  {
+    public void run() {
         while (true) {
             this.doWork();
             if (this.server_state.debug_mode == 1) {
@@ -53,9 +53,5 @@ public class MainLoop implements Runnable {
     synchronized public void wakeup() {
         this.has_work = true;
         notify();
-    }
-
-    public void checkDebugMode() {
-
     }
 }
