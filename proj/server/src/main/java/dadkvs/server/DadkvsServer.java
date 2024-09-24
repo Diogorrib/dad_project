@@ -11,6 +11,7 @@ import dadkvs.DadkvsMainServiceGrpc;
 public class DadkvsServer {
 
     static DadkvsServerState server_state;
+    private static Server server;
 
     /**
      * Server host port.
@@ -47,7 +48,7 @@ public class DadkvsServer {
         final BindableService paxos_impl = new DadkvsPaxosServiceImpl(server_state);
 
         // Create a new server to listen on port.
-        Server server = ServerBuilder.forPort(port).addService(service_impl).addService(console_impl).addService(paxos_impl).build();
+        server = ServerBuilder.forPort(port).addService(service_impl).addService(console_impl).addService(paxos_impl).build();
         // Start the server.
         server.start();
         // Server threads are running in the background.
@@ -55,5 +56,16 @@ public class DadkvsServer {
 
         // Do not exit the main thread. Wait until server is terminated.
         server.awaitTermination();
+    }
+
+    public static void simulateCrash() {
+        if (server != null) {
+            try {
+                server.shutdown();
+                server.awaitTermination();
+            } catch (InterruptedException e) {
+                server.shutdownNow();
+            }
+        }
     }
 }

@@ -26,9 +26,14 @@ public class MainLoop implements Runnable {
         this.has_work = false;
     }
 
-    public void run() {
-        while (true)
+    public void run()  {
+        while (true) {
             this.doWork();
+            if (this.server_state.debug_mode == 1) {
+                DadkvsServer.simulateCrash();
+                break;
+            }
+        }
     }
 
 
@@ -48,5 +53,9 @@ public class MainLoop implements Runnable {
     synchronized public void wakeup() {
         this.has_work = true;
         notify();
+    }
+
+    public void checkDebugMode() {
+
     }
 }

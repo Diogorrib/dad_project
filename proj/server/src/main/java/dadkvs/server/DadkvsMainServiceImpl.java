@@ -7,10 +7,14 @@ import dadkvs.DadkvsMainServiceGrpc;
 
 import io.grpc.stub.StreamObserver;
 
+import java.util.Random;
+
 public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServiceImplBase {
 
     DadkvsServerState server_state;
     int timestamp;
+    boolean freezeEnabled;
+    boolean delayEnabled;
 
     public DadkvsMainServiceImpl(DadkvsServerState state) {
         this.server_state = state;
@@ -19,8 +23,13 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
     @Override
     public void read(DadkvsMain.ReadRequest request, StreamObserver<DadkvsMain.ReadReply> responseObserver) {
+        if (freeze()) {
+            System.out.println("freezed blocking read request:" + request);
+            return;
+        }
         // for debug purposes
         System.out.println("Receiving read request:" + request);
+        delay();
 
         int reqid = request.getReqid();
         int key = request.getKey();
@@ -35,8 +44,13 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
     @Override
     public void committx(DadkvsMain.CommitRequest request, StreamObserver<DadkvsMain.CommitReply> responseObserver) {
+        if (freeze()) {
+            System.out.println("freezed blocking commit request:" + request);
+            return;
+        }
         // for debug purposes
         System.out.println("Receiving commit request:" + request);
+        delay();
 
         int reqid = request.getReqid();
         int key1 = request.getKey1();
@@ -63,5 +77,34 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();
+    }
+
+    private boolean freeze() {
+        if (this.server_state.debug_mode == 2) {
+            freezeEnabled = true;
+        } else if (this.server_state.debug_mode == 3) {
+            freezeEnabled = false;
+        }
+        return freezeEnabled;
+    }
+
+    private void delay() {
+        if (this.server_state.debug_mode == 4) {
+            delayEnabled = true;
+        } else if (this.server_state.debug_mode == 5) {
+            delayEnabled = false;
+        }
+
+        if (delayEnabled) {
+            Random random = new Random();
+            int randomDelay = 100 + random.nextInt(9900);
+
+            // for debug purposes
+            System.out.println("delaying " + randomDelay + " milliseconds");
+            try {
+                Thread.sleep(randomDelay);
+            } catch (InterruptedException e) {
+            }
+        }
     }
 }
