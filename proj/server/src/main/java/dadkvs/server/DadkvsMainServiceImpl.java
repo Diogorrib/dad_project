@@ -4,9 +4,12 @@ package dadkvs.server;
 
 import dadkvs.DadkvsMain;
 import dadkvs.DadkvsMainServiceGrpc;
-
+import dadkvs.DadkvsSequencer;
+import dadkvs.util.CollectorStreamObserver;
+import dadkvs.util.GenericResponseCollector;
 import io.grpc.stub.StreamObserver;
 
+import java.util.ArrayList;
 import java.util.Random;
 
 public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServiceImplBase {
@@ -15,10 +18,12 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     int timestamp;
     boolean freezeEnabled;
     boolean delayEnabled;
+    int currentSeqNumber;
 
     public DadkvsMainServiceImpl(DadkvsServerState state) {
         this.server_state = state;
         this.timestamp = 0;
+        this.currentSeqNumber = 1;
     }
 
     @Override
@@ -106,5 +111,36 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             } catch (InterruptedException e) {
             }
         }
+    }
+
+    private void getOrder(int reqId, int currentSeqNumber) {
+        if (this.server_state.i_am_leader) {
+            sendOrder(reqId);
+        } else {
+            this.server_state.waitForOrder(reqId, currentSeqNumber);
+        }
+    }
+
+    private void sendOrder(int reqId) {
+        DadkvsSequencer.SendSeqNumberRequest.Builder sequence_number_request = DadkvsSequencer.SendSeqNumberRequest.newBuilder();
+
+        sequence_number_request.setReqid(reqId)
+                .setSeqNumber(this.server_state.sequence_number);
+
+        //Send request
+        ArrayList<DadkvsSequencer.SendSeqNumberReply> sequence_number_responses = new ArrayList<DadkvsSequencer.SendSeqNumberReply>();
+        GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply> sequence_number_collector
+                = new GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply>(sequence_number_responses, 4);
+
+        for (int i = 0; i < 4; i++) {
+            CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply> sequence_number_observer = new CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply>(sequence_number_collector);
+            this.server_state.async_stubs[i].sendseqnumber(sequence_number_request.build(), sequence_number_observer);
+        }
+
+        sequence_number_collector.waitForTarget(4);
+
+        this.server_state.pendingRequests.put(reqId, this.server_state.sequence_number);
+
+        this.server_state.sequence_number++;
     }
 }
