@@ -25,7 +25,7 @@ public class DadkvsSequencerServiceImpl extends DadkvsSequencerServiceGrpc.Dadkv
 
         this.server_state.wakeUp(); //Won't do the same thing has main loop??
 
-        this.server_state.main_loop.wakeup(); //!FIXME
+        //this.server_state.main_loop.wakeup(); //!FIXME
 
         DadkvsSequencer.SendSeqNumberReply response = DadkvsSequencer.SendSeqNumberReply.newBuilder()
                 .setReqid(reqId).setAccepted(true).build();

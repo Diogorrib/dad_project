@@ -37,30 +37,30 @@ public class DadkvsServerState {
     }
 
     void initComms() {
-        String[] targets = new String[4];
+        String[] targets = new String[5];
 
         // set servers
         for (int i = 0; i < 5; i++) {
             int target_port = base_port + i;
 
-            if (target_port == base_port + my_id) //don't create a channel to itself
-                continue;
+            //if (target_port == base_port + my_id) //don't create a channel to itself
+            //    continue;
 
-            targets[i] = new String();
+            targets[i] = "";
             targets[i] = "localhost" + ":" + target_port;
             System.out.printf("targets[%d] = %s%n", i, targets[i]);
         }
 
         // Let us use plaintext communication because we do not have certificates
-        channels = new ManagedChannel[4];
+        channels = new ManagedChannel[5];
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             channels[i] = ManagedChannelBuilder.forTarget(targets[i]).usePlaintext().build();
         }
 
-        async_stubs = new DadkvsSequencerServiceGrpc.DadkvsSequencerServiceStub[4];
+        async_stubs = new DadkvsSequencerServiceGrpc.DadkvsSequencerServiceStub[5];
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             async_stubs[i] = DadkvsSequencerServiceGrpc.newStub(channels[i]);
         }
     }

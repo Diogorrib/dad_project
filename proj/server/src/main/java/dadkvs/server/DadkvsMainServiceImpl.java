@@ -34,10 +34,12 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         }
         // for debug purposes
         System.out.println("Receiving read request:" + request);
-        delay();
 
         int reqid = request.getReqid();
         int key = request.getKey();
+        getOrder(reqid, currentSeqNumber);
+        delay();
+
         VersionedValue vv = this.server_state.store.read(key);
 
         DadkvsMain.ReadReply response = DadkvsMain.ReadReply.newBuilder()
@@ -55,7 +57,6 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         }
         // for debug purposes
         System.out.println("Receiving commit request:" + request);
-        delay();
 
         int reqid = request.getReqid();
         int key1 = request.getKey1();
@@ -64,15 +65,15 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         int version2 = request.getVersion2();
         int writekey = request.getWritekey();
         int writeval = request.getWriteval();
+        getOrder(reqid, currentSeqNumber);
+        delay();
 
         // for debug purposes
         System.out.println("reqid " + reqid + " key1 " + key1 + " v1 " + version1 + " k2 " + key2 + " v2 " + version2 + " wk " + writekey + " writeval " + writeval);
 
-
         this.timestamp++;
         TransactionRecord txrecord = new TransactionRecord(key1, version1, key2, version2, writekey, writeval, this.timestamp);
         boolean result = this.server_state.store.commit(txrecord);
-
 
         // for debug purposes
         System.out.println("Result is ready for request with reqid " + reqid);
@@ -127,17 +128,22 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         sequence_number_request.setReqid(reqId)
                 .setSeqNumber(this.server_state.sequence_number);
 
+        System.out.println("Sent seqNumber: " +  this.server_state.sequence_number + "to reqId: " + reqId);
+
         //Send request
         ArrayList<DadkvsSequencer.SendSeqNumberReply> sequence_number_responses = new ArrayList<DadkvsSequencer.SendSeqNumberReply>();
         GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply> sequence_number_collector
-                = new GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply>(sequence_number_responses, 4);
+                = new GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply>(sequence_number_responses, 5);
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply> sequence_number_observer = new CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply>(sequence_number_collector);
             this.server_state.async_stubs[i].sendseqnumber(sequence_number_request.build(), sequence_number_observer);
         }
 
-        sequence_number_collector.waitForTarget(4);
+        sequence_number_collector.waitForTarget(5);
+
+        // for debug purposes
+        System.out.println("Received acks from all servers");
 
         this.server_state.pendingRequests.put(reqId, this.server_state.sequence_number);
 

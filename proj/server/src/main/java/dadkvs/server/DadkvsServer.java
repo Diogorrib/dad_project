@@ -10,11 +10,6 @@ public class DadkvsServer {
     static DadkvsServerState server_state;
     private static Server server;
 
-    /**
-     * Server host port.
-     */
-    private static int port;
-
     public static void main(String[] args) throws Exception {
         final int kvsize = 1000;
 
@@ -33,19 +28,20 @@ public class DadkvsServer {
             return;
         }
 
-        int base_port = Integer.valueOf(args[0]);
-        int my_id = Integer.valueOf(args[1]);
+        int base_port = Integer.parseInt(args[0]);
+        int my_id = Integer.parseInt(args[1]);
 
         server_state = new DadkvsServerState(kvsize, base_port, my_id);
 
-        port = base_port + my_id;
+        int port = base_port + my_id;
 
         final BindableService service_impl = new DadkvsMainServiceImpl(server_state);
         final BindableService console_impl = new DadkvsConsoleServiceImpl(server_state);
         final BindableService paxos_impl = new DadkvsPaxosServiceImpl(server_state);
+        final BindableService seq_impl = new DadkvsSequencerServiceImpl(server_state);
 
         // Create a new server to listen on port.
-        server = ServerBuilder.forPort(port).addService(service_impl).addService(console_impl).addService(paxos_impl).build();
+        server = ServerBuilder.forPort(port).addService(service_impl).addService(console_impl).addService(paxos_impl).addService(seq_impl).build();
         // Start the server.
         server.start();
         // Server threads are running in the background.
