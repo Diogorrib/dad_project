@@ -146,7 +146,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply> sequence_number_observer = new CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply>(sequence_number_collector);
             this.server_state.async_stubs[i].sendseqnumber(sequence_number_request.build(), sequence_number_observer);
         }
-        sequence_number_collector.waitForTarget(1);
+        sequence_number_collector.waitForTarget(5); // FIXME
 
         // for debug purposes
         System.out.println("Received acks from all servers");
