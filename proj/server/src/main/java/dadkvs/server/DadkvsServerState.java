@@ -15,9 +15,10 @@ public class DadkvsServerState {
     KeyValueStore  store;
     MainLoop       main_loop;
     Thread         main_loop_worker;
-    int            sequence_number;
+    int            sequence_number; // seq_number that leader assigns to each request
+    int            curr_seq_number; // seq_number of the request server is processing
     // <reqId, SeqNumber>
-    TreeMap<Integer, Integer> pendingRequests = new TreeMap<>();
+    TreeMap<Integer, Integer> pendingRequests;
 
     ManagedChannel[] channels;
     DadkvsSequencerServiceGrpc.DadkvsSequencerServiceStub[] async_stubs;
@@ -29,15 +30,18 @@ public class DadkvsServerState {
 	i_am_leader = false;
 	debug_mode = 0;
 	store_size = kv_size;
-    sequence_number = 1;
 	store = new KeyValueStore(kv_size);
 	main_loop = new MainLoop(this);
 	main_loop_worker = new Thread (main_loop);
 	main_loop_worker.start();
+    sequence_number = 0;
+    curr_seq_number = 0;
+    pendingRequests = new TreeMap<>();
     }
 
-    void initComms() {
+    public void initComms() {
         String[] targets = new String[5];
+        sequence_number = curr_seq_number + pendingRequests.size();
 
         // set servers
         for (int i = 0; i < 5; i++) {
@@ -46,8 +50,7 @@ public class DadkvsServerState {
             //if (target_port == base_port + my_id) //don't create a channel to itself
             //    continue;
 
-            targets[i] = "";
-            targets[i] = "localhost" + ":" + target_port;
+            targets[i] = "localhost:" + target_port;
             System.out.printf("targets[%d] = %s%n", i, targets[i]);
         }
 
@@ -65,18 +68,27 @@ public class DadkvsServerState {
         }
     }
 
-    synchronized public void waitForOrder(int reqId, int currentSeqNumber) {
-        Integer seq_number = this.pendingRequests.get(reqId);
-        while (seq_number == null || seq_number != currentSeqNumber) {
+    public void terminateComms() {
+        for (int i = 0; i < 5; i++) {
+            channels[i].shutdown();
+        }
+    }
+
+    synchronized public void waitForOrder(int reqId) {
+        Integer seq_number = pendingRequests.get(reqId);
+        while (seq_number == null || seq_number != curr_seq_number) {
+            System.out.println("Wait for Order: waiting " + curr_seq_number);
             try {
                 wait();
             } catch (InterruptedException e) {
             }
-            seq_number = this.pendingRequests.get(reqId);
+            seq_number = pendingRequests.get(reqId);
         }
+        System.out.println("Wait for Order: completed");
+        pendingRequests.remove(reqId);
     }
 
     synchronized public void wakeUp() {
-        notify();
+        notifyAll(); // since there could be multiple requests waiting to be processed
     }
 }

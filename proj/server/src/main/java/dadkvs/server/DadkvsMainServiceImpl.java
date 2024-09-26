@@ -18,12 +18,10 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     int timestamp;
     boolean freezeEnabled;
     boolean delayEnabled;
-    int currentSeqNumber;
 
     public DadkvsMainServiceImpl(DadkvsServerState state) {
         this.server_state = state;
         this.timestamp = 0;
-        this.currentSeqNumber = 1;
     }
 
     @Override
@@ -37,10 +35,13 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         int reqid = request.getReqid();
         int key = request.getKey();
-        getOrder(reqid, currentSeqNumber);
+        getOrder(reqid);
         delay();
 
         VersionedValue vv = this.server_state.store.read(key);
+
+        // ensure that request was processed before proceeding to the next one
+        finishRequestProcess();
 
         DadkvsMain.ReadReply response = DadkvsMain.ReadReply.newBuilder()
                 .setReqid(reqid).setValue(vv.getValue()).setTimestamp(vv.getVersion()).build();
@@ -65,7 +66,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         int version2 = request.getVersion2();
         int writekey = request.getWritekey();
         int writeval = request.getWriteval();
-        getOrder(reqid, currentSeqNumber);
+        getOrder(reqid);
         delay();
 
         // for debug purposes
@@ -74,6 +75,9 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         this.timestamp++;
         TransactionRecord txrecord = new TransactionRecord(key1, version1, key2, version2, writekey, writeval, this.timestamp);
         boolean result = this.server_state.store.commit(txrecord);
+
+        // ensure that request was processed before proceeding to the next one
+        finishRequestProcess();
 
         // for debug purposes
         System.out.println("Result is ready for request with reqid " + reqid);
@@ -114,12 +118,12 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         }
     }
 
-    private void getOrder(int reqId, int currentSeqNumber) {
+    private void getOrder(int reqId) {
         if (this.server_state.i_am_leader) {
             sendOrder(reqId);
-        } else {
-            this.server_state.waitForOrder(reqId, currentSeqNumber);
         }
+        // the leader also waits since it also receives the order from itself
+        this.server_state.waitForOrder(reqId);
     }
 
     private void sendOrder(int reqId) {
@@ -128,7 +132,10 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         sequence_number_request.setReqid(reqId)
                 .setSeqNumber(this.server_state.sequence_number);
 
-        System.out.println("Sent seqNumber: " +  this.server_state.sequence_number + "to reqId: " + reqId);
+        // for debug purposes
+        System.out.println("Sent to all servers seqNumber: " +  this.server_state.sequence_number + " assigned to reqId: " + reqId);
+
+        this.server_state.sequence_number++;
 
         //Send request
         ArrayList<DadkvsSequencer.SendSeqNumberReply> sequence_number_responses = new ArrayList<DadkvsSequencer.SendSeqNumberReply>();
@@ -139,14 +146,16 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply> sequence_number_observer = new CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply>(sequence_number_collector);
             this.server_state.async_stubs[i].sendseqnumber(sequence_number_request.build(), sequence_number_observer);
         }
-
-        sequence_number_collector.waitForTarget(5);
+        sequence_number_collector.waitForTarget(1);
 
         // for debug purposes
         System.out.println("Received acks from all servers");
+    }
 
-        this.server_state.pendingRequests.put(reqId, this.server_state.sequence_number);
-
-        this.server_state.sequence_number++;
+    private void finishRequestProcess() {
+        this.server_state.curr_seq_number++;
+        if (!this.server_state.pendingRequests.isEmpty()) {
+            this.server_state.wakeUp();
+        }
     }
 }
