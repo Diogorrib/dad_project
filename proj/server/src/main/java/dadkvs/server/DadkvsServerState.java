@@ -77,7 +77,8 @@ public class DadkvsServerState {
     synchronized public void waitForOrder(int reqId) {
         Integer seq_number = pendingRequests.get(reqId);
         while (seq_number == null || seq_number != curr_seq_number) {
-            System.out.println("Wait for Order: waiting " + curr_seq_number);
+            System.out.println("Wait for Order with curr_seq_number:  " + curr_seq_number);
+            System.out.println("SeqNumber vs CurrentSeqNumber:" + seq_number + " " + curr_seq_number);
             try {
                 wait();
             } catch (InterruptedException e) {

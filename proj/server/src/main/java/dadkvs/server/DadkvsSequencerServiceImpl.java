@@ -15,8 +15,6 @@ public class DadkvsSequencerServiceImpl extends DadkvsSequencerServiceGrpc.Dadkv
 
     @Override
     public void sendseqnumber(DadkvsSequencer.SendSeqNumberRequest request, StreamObserver<DadkvsSequencer.SendSeqNumberReply> responseObserver) {
-        // for debug purposes
-        System.out.println("Receive sequence number request: " + request);
 
         int reqId = request.getReqid();
         int sequence_number = request.getSeqNumber();
