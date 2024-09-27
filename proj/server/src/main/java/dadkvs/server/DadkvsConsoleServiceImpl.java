@@ -22,9 +22,8 @@ public class DadkvsConsoleServiceImpl extends DadkvsConsoleServiceGrpc.DadkvsCon
         System.out.println(request);
 
         boolean response_value = true;
-        boolean i_am_leader = request.getIsleader();
-        manageComms(this.server_state.i_am_leader, i_am_leader);
-        this.server_state.i_am_leader = i_am_leader;
+
+        this.server_state.i_am_leader = request.getIsleader();
 
         // for debug purposes
         System.out.println("I am the leader = " + this.server_state.i_am_leader);
@@ -56,13 +55,5 @@ public class DadkvsConsoleServiceImpl extends DadkvsConsoleServiceGrpc.DadkvsCon
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();
-    }
-
-    private void manageComms(boolean i_am_leader_old, boolean i_am_leader_new) {
-        if (!i_am_leader_old && i_am_leader_new) {
-            server_state.initComms(); //create stubs to speak with other servers
-        } else if (i_am_leader_old && !i_am_leader_new) {
-            server_state.terminateComms();
-        }
     }
 }

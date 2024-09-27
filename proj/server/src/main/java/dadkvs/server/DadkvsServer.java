@@ -38,10 +38,11 @@ public class DadkvsServer {
         final BindableService service_impl = new DadkvsMainServiceImpl(server_state);
         final BindableService console_impl = new DadkvsConsoleServiceImpl(server_state);
         final BindableService paxos_impl = new DadkvsPaxosServiceImpl(server_state);
-        final BindableService seq_impl = new DadkvsSequencerServiceImpl(server_state);
 
         // Create a new server to listen on port.
-        server = ServerBuilder.forPort(port).addService(service_impl).addService(console_impl).addService(paxos_impl).addService(seq_impl).build();
+        server = ServerBuilder.forPort(port).addService(service_impl).addService(console_impl).addService(paxos_impl).build();
+
+        server_state.initComms();
         // Start the server.
         server.start();
         // Server threads are running in the background.
@@ -54,6 +55,7 @@ public class DadkvsServer {
     public static void simulateCrash() {
         if (server != null) {
             try {
+                server_state.terminateComms();
                 server.shutdown();
                 server.awaitTermination();
             } catch (InterruptedException e) {

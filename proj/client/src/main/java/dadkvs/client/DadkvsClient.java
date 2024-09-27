@@ -161,7 +161,8 @@ public class DadkvsClient {
             Thread.sleep(rnd.nextInt(sleep_range) * 1000);
             counter++;
         }
-        System.out.println("loop done. transactions committed = " + committed + ". transactions aborted = " + (loop_size - committed) + ".");
+        System.out.println("loop done. transactions committed = " + committed + ". transactions aborted = "
+                + (loop_size - committed) + ".");
 
     }
 
