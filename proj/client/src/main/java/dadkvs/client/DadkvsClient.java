@@ -215,7 +215,7 @@ public class DadkvsClient {
                     System.out.print("--host hostname");
                     System.out.print("--port portnumber");
                     System.out.print("--range keyrange");
-                    System.out.print("--lenght looplenght");
+                    System.out.print("--length looplength");
                     System.out.print("--sleep sleeprange");
                     System.out.print("-i (iterative mode)");
                     cursor++;
@@ -238,9 +238,9 @@ public class DadkvsClient {
                     else
                         key_range = Integer.parseInt(option_parameter);
                     break;
-                case "--lenght":
+                case "--length":
                     if (option_parameter == null)
-                        System.err.println("missing looplenght");
+                        System.err.println("missing looplength");
                     else
                         loop_size = Integer.parseInt(option_parameter);
                     break;
@@ -286,7 +286,7 @@ public class DadkvsClient {
                     System.out.println("\ttx read_key read_key write_key");
                     System.out.println("\tloop");
                     System.out.println("\trange key-range");
-                    System.out.println("\tlenght loop-lenght");
+                    System.out.println("\tlength loop-length");
                     System.out.println("\ttime sleep-range");
                     System.out.println("\texit");
                     break;
@@ -330,16 +330,16 @@ public class DadkvsClient {
                     } else
                         System.out.println("usage: tx read_key read_key write_key");
                     break;
-                case "lenght":
-                    System.out.println("lenght " + parameter1);
+                case "length":
+                    System.out.println("length " + parameter1);
                     if (parameter1 != null) {
                         try {
                             loop_size = Integer.parseInt(parameter1);
                         } catch (NumberFormatException e) {
-                            System.out.println("usage: lenght loop-lenght");
+                            System.out.println("usage: length loop-length");
                         }
                     } else
-                        System.out.println("usage: lenght loop-lenght");
+                        System.out.println("usage: length loop-length");
                     break;
                 case "range":
                     System.out.println("range " + parameter1);

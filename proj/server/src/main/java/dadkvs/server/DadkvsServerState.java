@@ -21,13 +21,14 @@ public class DadkvsServerState {
     int            configuration; // for paxos
     int            curr_index; // for paxos
     int            timestamp; // for paxos
+    int            last_seen_timestamp; // for paxos
     boolean        in_paxos_instance; // for paxos
     VersionedValue last_seen_value; // for paxos
     VersionedValue learn_messages_received; // for paxos
-    int            curr_seq_number;
+    int            next_to_process;  //Next index to be processed
 
     // <reqId>
-    ArrayList<Integer> pendingRequestsForPaxos;
+    ArrayList<String> pendingRequestsForPaxos;
 
     // <reqId, index>
     TreeMap<Integer, Integer> pendingRequestsForProcessing;
@@ -50,8 +51,9 @@ public class DadkvsServerState {
 	main_loop_worker.start();
     configuration = 0;
     curr_index = 0;
-    curr_seq_number = 0;
+    next_to_process = 0;
     timestamp = my_id;
+    last_seen_timestamp = 0;
     in_paxos_instance = false;
     last_seen_value = new VersionedValue(-1, -1);
     learn_messages_received = new VersionedValue(0, -1);
@@ -99,5 +101,20 @@ public class DadkvsServerState {
     public void updateValue(int value, int timestamp) {
         last_seen_value.setValue(value);
         last_seen_value.setVersion(timestamp);
+    }
+
+    public void increaseTimestamp(int timestamp) {
+        this.timestamp = (timestamp / 5 + 1) * 5 + my_id;
+    }
+
+    public void resetPaxosInstanceValues() {
+        curr_index++;
+        timestamp = my_id;
+        last_seen_timestamp = 0;
+        last_seen_value = new VersionedValue(-1, -1);
+        learn_messages_received = new VersionedValue(0, -1);
+        in_paxos_instance = false;
+        paxos_loop.wakeup();
+        requests_loop.wakeup();
     }
 }

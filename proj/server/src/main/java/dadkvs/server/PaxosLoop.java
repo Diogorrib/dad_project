@@ -14,9 +14,8 @@ public class PaxosLoop {
         this.server_state = state;
     }
 
-    synchronized public void startPaxos(int reqid) {
-
-        this.server_state.pendingRequestsForPaxos.add(reqid);
+    public void startPaxos(int reqid) {
+        this.server_state.pendingRequestsForPaxos.add("" + reqid);
         waitPreviousConsensus();
 
         //I'm a proposer
@@ -36,6 +35,9 @@ public class PaxosLoop {
                 System.out.println("Phase1 completed");
 
                 phasetwo_completed = phase2();
+
+                if(!phasetwo_completed)
+                    waitBackoff(backoff);
             }
             // for debug purposes
             System.out.println("Phase2 completed");
@@ -89,7 +91,7 @@ public class PaxosLoop {
 
                 //Phase 1 rejected by one of the acceptors
                 if (!phaseone_reply.getPhase1Accepted()) {
-                    this.server_state.timestamp = (timestamp / 5 + 1) * 5 + this.server_state.my_id;
+                    this.server_state.increaseTimestamp(timestamp);
                     // for debug purposes
                     System.out.println("Phase1 Acceptor rejected. Increase timestamp to: " + this.server_state.timestamp);
                     return false; // try again with new timestamp
@@ -118,7 +120,7 @@ public class PaxosLoop {
 
         int value = this.server_state.last_seen_value.getValue();
         if (value == -1) {
-            value = this.server_state.pendingRequestsForPaxos.getFirst();
+            value = Integer.parseInt(this.server_state.pendingRequestsForPaxos.getFirst());
         }
 
         this.server_state.updateValue(value, this.server_state.timestamp);
@@ -150,7 +152,14 @@ public class PaxosLoop {
             Iterator<DadkvsPaxos.PhaseTwoReply> phasetwo_iterator = phasetwo_responses.iterator();
             for (int i = 0; i < responses_needed; i++) {
                 DadkvsPaxos.PhaseTwoReply phasetwo_reply = phasetwo_iterator.next();
-                // TODO
+
+                //Phase 2 rejected by one of the acceptors
+                if (!phasetwo_reply.getPhase2Accepted()) {
+                    this.server_state.increaseTimestamp(this.server_state.timestamp);
+                    // for debug purposes
+                    System.out.println("Phase2 Acceptor rejected. Increase timestamp to: " + this.server_state.timestamp);
+                    return false; // try again with new timestamp
+                }
             }
             return true;
         } else {

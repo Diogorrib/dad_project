@@ -36,6 +36,9 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         VersionedValue vv = this.server_state.store.read(key);
 
+        // ensure that request was processed before proceeding to the next one
+        finishRequestProcess();
+
         DadkvsMain.ReadReply response = DadkvsMain.ReadReply.newBuilder()
                 .setReqid(reqid).setValue(vv.getValue()).setTimestamp(vv.getVersion()).build();
 
@@ -74,6 +77,9 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         if (writekey == 0 && result) {
             this.server_state.configuration = writeval;
         }
+
+        // ensure that request was processed before proceeding to the next one
+        finishRequestProcess();
 
         // for debug purposes
         System.out.println("Result is ready for request with reqid " + reqid);
@@ -119,5 +125,12 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             this.server_state.paxos_loop.startPaxos(reqid);
         });
         this.server_state.requests_loop.waitForOrder(reqid);
+    }
+
+    private void finishRequestProcess() {
+        this.server_state.next_to_process++;
+        if (!this.server_state.pendingRequestsForProcessing.isEmpty()) {
+            this.server_state.requests_loop.wakeup();
+        }
     }
 }

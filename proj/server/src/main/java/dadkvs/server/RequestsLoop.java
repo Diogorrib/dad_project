@@ -9,7 +9,7 @@ public class RequestsLoop {
 
     synchronized public void waitForOrder(int reqid) {
         Integer seq_number = this.server_state.pendingRequestsForProcessing.get(reqid);
-        while (seq_number == null || seq_number != this.server_state.curr_seq_number) {
+        while (seq_number == null || seq_number != this.server_state.next_to_process) {
             try {
                 wait();
             } catch (InterruptedException e) {
