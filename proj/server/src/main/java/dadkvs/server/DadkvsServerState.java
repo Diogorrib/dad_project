@@ -4,6 +4,7 @@ import dadkvs.DadkvsPaxosServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
+import java.util.ArrayList;
 import java.util.TreeMap;
 
 public class DadkvsServerState {
@@ -19,8 +20,16 @@ public class DadkvsServerState {
     int            curr_index;
     int            timestamp;
     VersionedValue last_seen_value;
-    // <reqId, SeqNumber>
-    TreeMap<Integer, Integer> pendingRequests;
+
+    // <reqId>
+    ArrayList<Integer> pendingRequestsForPaxos;
+
+    // <reqId, index>
+    TreeMap<Integer, Integer> pendingRequestsForProcessing;
+
+    VersionedValue  learn_messages_received;
+    boolean         in_paxos_instance;
+    int             curr_seq_number;
 
     ManagedChannel[] channels;
     DadkvsPaxosServiceGrpc.DadkvsPaxosServiceStub[] async_stubs;
@@ -40,7 +49,11 @@ public class DadkvsServerState {
     curr_index = 0;
     timestamp = my_id;
     last_seen_value = new VersionedValue(-1, -1);
-    pendingRequests = new TreeMap<>();
+    pendingRequestsForPaxos = new ArrayList<>();
+    pendingRequestsForProcessing = new TreeMap<>();
+    learn_messages_received = new VersionedValue(-1, 0);
+    in_paxos_instance = false;
+    curr_seq_number = 0;
     }
 
     public void initComms() {
@@ -78,5 +91,10 @@ public class DadkvsServerState {
 
     public boolean inConfiguration() {
         return my_id >= configuration && my_id < configuration + 3;
+    }
+
+    public void updateValue(int value, int timestamp) {
+        last_seen_value.setValue(value);
+        last_seen_value.setVersion(timestamp);
     }
 }
