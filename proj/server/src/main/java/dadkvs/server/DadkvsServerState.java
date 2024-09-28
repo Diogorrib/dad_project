@@ -15,21 +15,22 @@ public class DadkvsServerState {
     int            store_size;
     KeyValueStore  store;
     MainLoop       main_loop;
+    PaxosLoop      paxos_loop;
+    RequestsLoop   requests_loop;
     Thread         main_loop_worker;
-    int            configuration;
-    int            curr_index;
-    int            timestamp;
-    VersionedValue last_seen_value;
+    int            configuration; // for paxos
+    int            curr_index; // for paxos
+    int            timestamp; // for paxos
+    boolean        in_paxos_instance; // for paxos
+    VersionedValue last_seen_value; // for paxos
+    VersionedValue learn_messages_received; // for paxos
+    int            curr_seq_number;
 
     // <reqId>
     ArrayList<Integer> pendingRequestsForPaxos;
 
     // <reqId, index>
     TreeMap<Integer, Integer> pendingRequestsForProcessing;
-
-    VersionedValue  learn_messages_received;
-    boolean         in_paxos_instance;
-    int             curr_seq_number;
 
     ManagedChannel[] channels;
     DadkvsPaxosServiceGrpc.DadkvsPaxosServiceStub[] async_stubs;
@@ -42,18 +43,20 @@ public class DadkvsServerState {
 	debug_mode = 0;
 	store_size = kv_size;
 	store = new KeyValueStore(kv_size);
+    paxos_loop = new PaxosLoop(this);
+    requests_loop = new RequestsLoop(this);
 	main_loop = new MainLoop(this);
 	main_loop_worker = new Thread (main_loop);
 	main_loop_worker.start();
     configuration = 0;
     curr_index = 0;
+    curr_seq_number = 0;
     timestamp = my_id;
+    in_paxos_instance = false;
     last_seen_value = new VersionedValue(-1, -1);
+    learn_messages_received = new VersionedValue(0, -1);
     pendingRequestsForPaxos = new ArrayList<>();
     pendingRequestsForProcessing = new TreeMap<>();
-    learn_messages_received = new VersionedValue(-1, 0);
-    in_paxos_instance = false;
-    curr_seq_number = 0;
     }
 
     public void initComms() {

@@ -130,7 +130,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
             this.server_state.pendingRequestsForProcessing.put(learnvalue, learnindex);
             this.server_state.pendingRequestsForPaxos.remove(learnvalue);
             this.server_state.in_paxos_instance = false;
-            notifyAll();
+            this.server_state.paxos_loop.wakeup();
+            this.server_state.requests_loop.wakeup();
         }
 
         // for debug purposes
@@ -169,6 +170,5 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     = new CollectorStreamObserver<>(learn_collector);
             this.server_state.async_stubs[i].learn(learn_request.build(), learn_observer);
         }
-
     }
 }
