@@ -128,7 +128,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     }
 
     private void finishRequestProcess() {
-        this.server_state.next_to_process++;
+        this.server_state.paxos_loop.next_to_process++;
         if (!this.server_state.pendingRequestsForProcessing.isEmpty()) {
             this.server_state.requests_loop.wakeup();
         }
