@@ -16,6 +16,8 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     public DadkvsMainServiceImpl(DadkvsServerState state) {
         this.server_state = state;
         this.timestamp = 0;
+        this.freezeEnabled = false;
+        this.delayEnabled = false;
     }
 
     @Override
