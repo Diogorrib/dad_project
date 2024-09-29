@@ -15,13 +15,14 @@ public class DadkvsServerState {
     KeyValueStore  store;
     MainLoop       main_loop;
     Thread         main_loop_worker;
-    int            sequence_number; // seq_number that leader assigns to each request
-    int            curr_seq_number; // seq_number of the request server is processing
     // <reqId, SeqNumber>
-    TreeMap<Integer, Integer> pendingRequests;
+    TreeMap<Integer, Integer> pending_requests;
+
+    SequencerOrder sequencer_order;
 
     ManagedChannel[] channels;
     DadkvsSequencerServiceGrpc.DadkvsSequencerServiceStub[] async_stubs;
+    static final int n_servers = 5;
 
 
     public DadkvsServerState(int kv_size, int port, int myself) {
@@ -34,17 +35,16 @@ public class DadkvsServerState {
 	main_loop = new MainLoop(this);
 	main_loop_worker = new Thread (main_loop);
 	main_loop_worker.start();
-    sequence_number = 0;
-    curr_seq_number = 0;
-    pendingRequests = new TreeMap<>();
+    pending_requests = new TreeMap<>();
+    sequencer_order = new SequencerOrder(this);
     }
 
     public void initComms() {
-        String[] targets = new String[5];
-        sequence_number = curr_seq_number + pendingRequests.size();
+        String[] targets = new String[n_servers];
+        sequencer_order.sequence_number = sequencer_order.curr_seq_number + pending_requests.size();
 
         // set servers
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < n_servers; i++) {
             int target_port = base_port + i;
 
             //if (target_port == base_port + my_id) //don't create a channel to itself
@@ -55,41 +55,22 @@ public class DadkvsServerState {
         }
 
         // Let us use plaintext communication because we do not have certificates
-        channels = new ManagedChannel[5];
+        channels = new ManagedChannel[n_servers];
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < n_servers; i++) {
             channels[i] = ManagedChannelBuilder.forTarget(targets[i]).usePlaintext().build();
         }
 
-        async_stubs = new DadkvsSequencerServiceGrpc.DadkvsSequencerServiceStub[5];
+        async_stubs = new DadkvsSequencerServiceGrpc.DadkvsSequencerServiceStub[n_servers];
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < n_servers; i++) {
             async_stubs[i] = DadkvsSequencerServiceGrpc.newStub(channels[i]);
         }
     }
 
     public void terminateComms() {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < n_servers; i++) {
             channels[i].shutdown();
         }
-    }
-
-    synchronized public void waitForOrder(int reqId) {
-        Integer seq_number = pendingRequests.get(reqId);
-        while (seq_number == null || seq_number != curr_seq_number) {
-            System.out.println("Wait for Order with curr_seq_number:  " + curr_seq_number);
-            System.out.println("SeqNumber vs CurrentSeqNumber:" + seq_number + " " + curr_seq_number);
-            try {
-                wait();
-            } catch (InterruptedException e) {
-            }
-            seq_number = pendingRequests.get(reqId);
-        }
-        System.out.println("Wait for Order: completed");
-        pendingRequests.remove(reqId);
-    }
-
-    synchronized public void wakeUp() {
-        notifyAll(); // since there could be multiple requests waiting to be processed
     }
 }

@@ -2,13 +2,8 @@ package dadkvs.server;
 
 import dadkvs.DadkvsMain;
 import dadkvs.DadkvsMainServiceGrpc;
-import dadkvs.DadkvsSequencer;
-import dadkvs.util.CollectorStreamObserver;
-import dadkvs.util.GenericResponseCollector;
-import io.grpc.Context;
 import io.grpc.stub.StreamObserver;
 
-import java.util.ArrayList;
 import java.util.Random;
 
 public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServiceImplBase {
@@ -34,7 +29,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         int reqid = request.getReqid();
         int key = request.getKey();
-        getOrder(reqid);
+        this.server_state.sequencer_order.getOrder(reqid);
         delay();
 
         VersionedValue vv = this.server_state.store.read(key);
@@ -65,7 +60,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         int version2 = request.getVersion2();
         int writekey = request.getWritekey();
         int writeval = request.getWriteval();
-        getOrder(reqid);
+        this.server_state.sequencer_order.getOrder(reqid);
         delay();
 
         // for debug purposes
@@ -117,43 +112,10 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         }
     }
 
-    private void getOrder(int reqId) {
-        if (this.server_state.i_am_leader) {
-            Context.current().fork().run(() -> {
-                sendOrder(reqId);
-            });
-        }
-        // the leader also waits since it also receives the order from itself
-        this.server_state.waitForOrder(reqId);
-    }
-
-    private void sendOrder(int reqId) {
-        DadkvsSequencer.SendSeqNumberRequest.Builder sequence_number_request = DadkvsSequencer.SendSeqNumberRequest.newBuilder();
-
-        sequence_number_request.setReqid(reqId)
-                .setSeqNumber(this.server_state.sequence_number);
-
-        // for debug purposes
-        System.out.println("Sent to all servers seqNumber: " +  this.server_state.sequence_number + " assigned to reqId: " + reqId);
-
-
-        //Send request
-        ArrayList<DadkvsSequencer.SendSeqNumberReply> sequence_number_responses = new ArrayList<DadkvsSequencer.SendSeqNumberReply>();
-        GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply> sequence_number_collector
-                = new GenericResponseCollector<DadkvsSequencer.SendSeqNumberReply>(sequence_number_responses, 5);
-
-        for (int i = 0; i < 5; i++) {
-            CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply> sequence_number_observer = new CollectorStreamObserver<DadkvsSequencer.SendSeqNumberReply>(sequence_number_collector);
-            this.server_state.async_stubs[i].sendseqnumber(sequence_number_request.build(), sequence_number_observer);
-        }
-
-        this.server_state.sequence_number++;
-    }
-
     private void finishRequestProcess() {
-        this.server_state.curr_seq_number++;
-        if (!this.server_state.pendingRequests.isEmpty()) {
-            this.server_state.wakeUp();
+        this.server_state.sequencer_order.curr_seq_number++;
+        if (!this.server_state.pending_requests.isEmpty()) {
+            this.server_state.sequencer_order.wakeUp();
         }
     }
 }

@@ -19,12 +19,12 @@ public class DadkvsSequencerServiceImpl extends DadkvsSequencerServiceGrpc.Dadkv
         int reqId = request.getReqid();
         int sequence_number = request.getSeqNumber();
 
-        this.server_state.pendingRequests.put(reqId, sequence_number);
+        this.server_state.pending_requests.put(reqId, sequence_number);
 
         // for debug purposes
         System.out.println("Request with reqId: " + reqId + " has sequence number (by leader): " + sequence_number);
 
-        this.server_state.wakeUp();
+        this.server_state.sequencer_order.wakeUp();
 
         DadkvsSequencer.SendSeqNumberReply response = DadkvsSequencer.SendSeqNumberReply.newBuilder()
                 .setReqid(reqId).setAccepted(true).build();
