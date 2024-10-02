@@ -26,7 +26,6 @@ public class PaxosLoop {
     int            timestamp;
     int            last_seen_timestamp;
     boolean        in_paxos_instance;
-    boolean        next_paxos;
     VersionedValue last_seen_value;
 
     List<Integer> learn_messages_received; //List of 3 elements (n_responses, timestamp, Index)
@@ -60,43 +59,52 @@ public class PaxosLoop {
         timestamp = state.my_id;
         last_seen_timestamp = 0;
         in_paxos_instance = false;
-        next_paxos = true;
         last_seen_value = new VersionedValue(-1, -1);
         learn_messages_received = new ArrayList<>(Arrays.asList(0, -1, 0));
 
     }
 
+    private void waitBackoff(BackOff backoff) {
+        long backoff_delay = backoff.calculateBackoffDelay();
+        // for debug purposes
+        System.out.println("Back off: " + backoff_delay + " milliseconds");
+        try {
+            Thread.sleep(backoff_delay);
+        } catch (InterruptedException e) {
+        }
+    }
 
     synchronized public void startPaxos(int reqid) {
         this.server_state.pendingRequestsForPaxos.add("" + reqid);
-        //waitPreviousConsensus();
+        waitPreviousConsensus();
         this.in_paxos_instance = true;
 
         while (this.in_paxos_instance) {
-            //I'm a proposer
+            //I'm a proposer and leader
             if (this.server_state.iAmProposer()) {
-                proposePaxos();
+                proposePaxos(reqid);
             }
             try {
                 logger.info("Waiting");
-                wait(); //FIXME: All are stuck here
+                wait(); //FIXME: All are stuck here (if proposePaxos() with success return; ??)
             } catch (InterruptedException e) {
             }
         }
-        //this.next_paxos = true;
         //notify();   // only one instance of paxos will start
     }
 
-    public void proposePaxos() {
+    public void proposePaxos(int reqid) {
         boolean phasetwo_completed = false;
 
         while (!phasetwo_completed) {
             boolean phaseone_completed = false;
             BackOff backoff = new BackOff();
             while (!phaseone_completed) {
-                if (!this.server_state.iAmProposer()) {
+
+                if (!this.server_state.iAmProposer() /*|| this.give_up*/) {
                     return;
                 }
+
                 phaseone_completed = phase1();
 
                 // wait before trying with higher leader value
@@ -113,16 +121,6 @@ public class PaxosLoop {
         }
         // for debug purposes
         System.out.println("Phase2 completed");
-    }
-
-    private void waitBackoff(BackOff backoff) {
-        long backoff_delay = backoff.calculateBackoffDelay();
-        // for debug purposes
-        System.out.println("Back off: " + backoff_delay + " milliseconds");
-        try {
-            Thread.sleep(backoff_delay);
-        } catch (InterruptedException e) {
-        }
     }
 
 
@@ -152,6 +150,37 @@ public class PaxosLoop {
 
         //Process responses for phase 1
         return processPhase1Replies(phaseone_responses);
+    }
+
+    private boolean processPhase1Replies(ArrayList<DadkvsPaxos.PhaseOneReply> phaseone_responses) {
+        if (phaseone_responses.size() >= responses_needed) {
+            Iterator<DadkvsPaxos.PhaseOneReply> phaseone_iterator = phaseone_responses.iterator();
+            for (int i = 0; i < responses_needed; i++) {
+                DadkvsPaxos.PhaseOneReply phaseone_reply = phaseone_iterator.next();
+                int timestamp = phaseone_reply.getPhase1Timestamp();
+
+                //Phase 1 rejected by one of the acceptors
+                if (!phaseone_reply.getPhase1Accepted()) {
+                    
+                    this.server_state.increaseTimestamp(timestamp);
+                    // for debug purposes
+                    System.out.println("Phase1 Acceptor rejected. Increase timestamp to: " + this.timestamp);
+                    return false; // try again with new timestamp
+                }
+
+                //Got accepted value from previous phase 2, update last_seen_value
+                if (timestamp > this.last_seen_value.getVersion()){
+                    int value = phaseone_reply.getPhase1Value();
+                    // for debug purposes
+                    System.out.println("Phase1 already accepted value: " + value + " with timestamp: " + timestamp);
+                    this.server_state.updateValue(value, timestamp);
+                }
+            }
+            return true;
+        } else {
+            System.out.println("Phase1 ERROR");
+            return false;
+        }
     }
 
     private boolean phase2() {
@@ -189,36 +218,6 @@ public class PaxosLoop {
         return processPhase2Replies(phasetwo_responses);
     }
 
-    private boolean processPhase1Replies(ArrayList<DadkvsPaxos.PhaseOneReply> phaseone_responses) {
-        if (phaseone_responses.size() >= responses_needed) {
-            Iterator<DadkvsPaxos.PhaseOneReply> phaseone_iterator = phaseone_responses.iterator();
-            for (int i = 0; i < responses_needed; i++) {
-                DadkvsPaxos.PhaseOneReply phaseone_reply = phaseone_iterator.next();
-                int timestamp = phaseone_reply.getPhase1Timestamp();
-
-                //Phase 1 rejected by one of the acceptors
-                if (!phaseone_reply.getPhase1Accepted()) {
-                    this.server_state.increaseTimestamp(timestamp);
-                    // for debug purposes
-                    System.out.println("Phase1 Acceptor rejected. Increase timestamp to: " + this.timestamp);
-                    return false; // try again with new timestamp
-                }
-
-                //Got accepted value from previous phase 2, update last_seen_value
-                if (timestamp > this.last_seen_value.getVersion()) {
-                    int value = phaseone_reply.getPhase1Value();
-                    // for debug purposes
-                    System.out.println("Phase1 already accepted value: " + value + " with timestamp: " + timestamp);
-                    this.server_state.updateValue(value, timestamp);
-                }
-            }
-            return true;
-        } else {
-            System.out.println("Phase1 ERROR");
-            return false;
-        }
-    }
-
     private boolean processPhase2Replies(ArrayList<DadkvsPaxos.PhaseTwoReply> phasetwo_responses) {
         if (phasetwo_responses.size() >= responses_needed) {
             Iterator<DadkvsPaxos.PhaseTwoReply> phasetwo_iterator = phasetwo_responses.iterator();
@@ -251,14 +250,12 @@ public class PaxosLoop {
 
 
     synchronized private void waitPreviousConsensus() {
-        while (!this.next_paxos) {
+        while (this.in_paxos_instance) {
             try {
                 wait();
             } catch (InterruptedException e) {
             }
         }
-        this.next_paxos = false;
-        this.in_paxos_instance = true;
     }
 
     synchronized public void wakeup() {

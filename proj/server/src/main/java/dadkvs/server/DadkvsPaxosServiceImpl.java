@@ -90,7 +90,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .build();
 
             Context.current().fork().run(() -> {
-                send4Learners();
+                send4Learners(phase2timestamp, phase2index);
             });
 
         } else {
@@ -121,11 +121,14 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
         // Save request to be processed in case a Majority of servers accepted this request
         if (learnindex == this.loop.learn_messages_received.get(2)) {
+
             if (learntimestamp > this.loop.learn_messages_received.get(1)) {
                 this.loop.learn_messages_received.set(0, 1);
                 this.loop.learn_messages_received.set(1, learntimestamp);
+
             } else if (learntimestamp == this.loop.learn_messages_received.get(1)) {
                 this.loop.learn_messages_received.set(0, this.loop.learn_messages_received.get(0) + 1);
+
                 if (this.loop.learn_messages_received.get(0) == 2) { //!FIXME: should be 2 or 3??
                    this.server_state.pendingRequestsForProcessing.put(learnvalue, learnindex);
                    this.server_state.pendingRequestsForPaxos.remove("" + learnvalue);
@@ -148,13 +151,13 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
     }
 
     // Acceptor when accepts Phase2 sends ACCEPT to all learners
-    private void send4Learners() {
+    private void send4Learners(int timestamp, int index) {
         DadkvsPaxos.LearnRequest.Builder learn_request = DadkvsPaxos.LearnRequest.newBuilder();
 
         learn_request.setLearnconfig(this.server_state.configuration)
-                .setLearnindex(this.loop.curr_index)
+                .setLearnindex(index)
                 .setLearnvalue(this.loop.last_seen_value.getValue())
-                .setLearntimestamp(this.loop.last_seen_timestamp);
+                .setLearntimestamp(timestamp);
 
         // Send request
         ArrayList<DadkvsPaxos.LearnReply> learn_responses = new ArrayList<>();

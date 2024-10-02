@@ -8,13 +8,13 @@ public class RequestsLoop {
     }
 
     synchronized public void waitForOrder(int reqid) {
-        Integer seq_number = this.server_state.pendingRequestsForProcessing.get(reqid);
-        while (seq_number == null || seq_number != this.server_state.paxos_loop.next_to_process) {
+        Integer index = this.server_state.pendingRequestsForProcessing.get(reqid);
+        while (index == null || index != this.server_state.paxos_loop.next_to_process) {
             try {
                 wait();
             } catch (InterruptedException e) {
             }
-            seq_number = this.server_state.pendingRequestsForProcessing.get(reqid);
+            index = this.server_state.pendingRequestsForProcessing.get(reqid);
         }
         System.out.println("Wait for Order: completed");
         this.server_state.pendingRequestsForProcessing.remove(reqid);
