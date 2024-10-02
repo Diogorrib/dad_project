@@ -2,13 +2,12 @@
 package dadkvs.server;
 
 
-import dadkvs.DadkvsMain;
 import dadkvs.DadkvsPaxos;
 import dadkvs.DadkvsPaxosServiceGrpc;
 import dadkvs.util.CollectorStreamObserver;
 import dadkvs.util.GenericResponseCollector;
-import io.grpc.stub.StreamObserver;
 import io.grpc.Context;
+import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
 
@@ -112,7 +111,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void learn(DadkvsPaxos.LearnRequest request, StreamObserver<DadkvsPaxos.LearnReply> responseObserver) {
-        // for debug purposes
+        // For debug purposes
         System.out.println("Receive learn request: " + request);
 
         int learnconfig = request.getLearnconfig();
@@ -120,21 +119,22 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int learnvalue = request.getLearnvalue();
         int learntimestamp = request.getLearntimestamp(); //!FIXME: why do we need the timestamp here??
 
-        //Save request to be processed in case a Majority of servers accepted this request
-        if (learntimestamp > this.loop.learn_messages_received.getVersion()) {
-            this.loop.learn_messages_received.setVersion(learntimestamp);
-            this.loop.learn_messages_received.setValue(1);
-        } else if (learntimestamp == this.loop.learn_messages_received.getVersion()) {
-            this.loop.learn_messages_received.setValue(this.loop.learn_messages_received.getValue() + 1);
+        // Save request to be processed in case a Majority of servers accepted this request
+        if (learnindex == this.loop.learn_messages_received.get(2)) {
+            if (learntimestamp > this.loop.learn_messages_received.get(1)) {
+                this.loop.learn_messages_received.set(0, 1);
+                this.loop.learn_messages_received.set(1, learntimestamp);
+            } else if (learntimestamp == this.loop.learn_messages_received.get(1)) {
+                this.loop.learn_messages_received.set(0, this.loop.learn_messages_received.get(0) + 1);
+                if (this.loop.learn_messages_received.get(0) == 2) { //!FIXME: should be 2 or 3??
+                   this.server_state.pendingRequestsForProcessing.put(learnvalue, learnindex);
+                   this.server_state.pendingRequestsForPaxos.remove("" + learnvalue);
+                   this.server_state.resetPaxosInstance();
+               }
+            }
         }
 
-        if (this.loop.learn_messages_received.getValue() >= 2) { //!FIXME: should be 2 or 3??
-            this.server_state.pendingRequestsForProcessing.put(learnvalue, learnindex);
-            this.server_state.pendingRequestsForPaxos.remove("" + learnvalue);
-            this.server_state.resetPaxosInstanceValues();
-        }
-
-        // for debug purposes
+        // For debug purposes
         System.out.println("Learn value " + learnvalue + " for index " + learnindex + " and timestamp " + learntimestamp);
 
         DadkvsPaxos.LearnReply response = DadkvsPaxos.LearnReply.newBuilder() //!FIXME: Always true???
@@ -147,7 +147,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         responseObserver.onCompleted();
     }
 
-    //Acceptor when accepts Phase2 sends ACCEPT to all learners
+    // Acceptor when accepts Phase2 sends ACCEPT to all learners
     private void send4Learners() {
         DadkvsPaxos.LearnRequest.Builder learn_request = DadkvsPaxos.LearnRequest.newBuilder();
 
@@ -156,12 +156,12 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                 .setLearnvalue(this.loop.last_seen_value.getValue())
                 .setLearntimestamp(this.loop.last_seen_timestamp);
 
-        //Send request
+        // Send request
         ArrayList<DadkvsPaxos.LearnReply> learn_responses = new ArrayList<>();
         GenericResponseCollector<DadkvsPaxos.LearnReply> learn_collector
                 = new GenericResponseCollector<>(learn_responses, n_servers);
 
-        // for debug purposes
+        // For debug purposes
         System.out.println("LEARN sending request to all learners for index: " + this.loop.curr_index + " and timestamp: " + this.loop.timestamp);
 
         // Request is sent for learners (every server)

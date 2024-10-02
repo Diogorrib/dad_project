@@ -32,7 +32,6 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         int reqid = request.getReqid();
         int key = request.getKey();
-
         splitThreads(reqid);
         delay();
 

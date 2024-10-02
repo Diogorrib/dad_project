@@ -5,7 +5,13 @@ import dadkvs.util.CollectorStreamObserver;
 import dadkvs.util.GenericResponseCollector;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 public class PaxosLoop {
     DadkvsServerState server_state;
@@ -13,15 +19,38 @@ public class PaxosLoop {
     private static final int n_acceptors = 3;
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
 
+    private static final Logger logger = Logger.getLogger(PaxosLoop.class.getName());
 
-    int            curr_index;              // for paxos
-    int            timestamp;               // for paxos
-    int            last_seen_timestamp;     // for paxos
-    boolean        in_paxos_instance;       // for paxos
-    boolean        next_paxos;              // for paxos
-    VersionedValue last_seen_value;         // for paxos
-    VersionedValue learn_messages_received; // for paxos
+
+    int            curr_index;
+    int            timestamp;
+    int            last_seen_timestamp;
+    boolean        in_paxos_instance;
+    boolean        next_paxos;
+    VersionedValue last_seen_value;
+
+    List<Integer> learn_messages_received; //List of 3 elements (n_responses, timestamp, Index)
     int            next_to_process;         //next index to be processed
+
+    static {
+        // Set a custom formatter to include the method name
+        for (Handler handler : Logger.getLogger("").getHandlers()) {
+            handler.setFormatter(new SimpleFormatter() {
+                private static final String format = "[%1$tF %1$tT] [%2$s] %4$s %5$s %n";
+
+                @Override
+                public synchronized String format(LogRecord lr) {
+                    return String.format(format,
+                            lr.getMillis(),
+                            lr.getSourceClassName() + "." + lr.getSourceMethodName(),
+                            lr.getLoggerName(),
+                            lr.getLevel().getLocalizedName(),
+                            lr.getMessage()
+                    );
+                }
+            });
+        }
+    }
 
 
     public PaxosLoop(DadkvsServerState state) {
@@ -33,26 +62,29 @@ public class PaxosLoop {
         in_paxos_instance = false;
         next_paxos = true;
         last_seen_value = new VersionedValue(-1, -1);
-        learn_messages_received = new VersionedValue(0, -1);
+        learn_messages_received = new ArrayList<>(Arrays.asList(0, -1, 0));
+
     }
 
 
-    public void startPaxos(int reqid) {
+    synchronized public void startPaxos(int reqid) {
         this.server_state.pendingRequestsForPaxos.add("" + reqid);
-        waitPreviousConsensus();
+        //waitPreviousConsensus();
+        this.in_paxos_instance = true;
 
         while (this.in_paxos_instance) {
             //I'm a proposer
-            if (this.server_state.i_am_leader && this.server_state.inConfiguration()) {
+            if (this.server_state.iAmProposer()) {
                 proposePaxos();
             }
             try {
+                logger.info("Waiting");
                 wait(); //FIXME: All are stuck here
             } catch (InterruptedException e) {
             }
         }
-        this.next_paxos = true;
-        notify();   // only one instance of paxos will start
+        //this.next_paxos = true;
+        //notify();   // only one instance of paxos will start
     }
 
     public void proposePaxos() {
@@ -62,11 +94,11 @@ public class PaxosLoop {
             boolean phaseone_completed = false;
             BackOff backoff = new BackOff();
             while (!phaseone_completed) {
-                phaseone_completed = phase1();
-
-                if (!this.server_state.i_am_leader || !this.server_state.inConfiguration()) {
+                if (!this.server_state.iAmProposer()) {
                     return;
                 }
+                phaseone_completed = phase1();
+
                 // wait before trying with higher leader value
                 if(!phaseone_completed)
                     waitBackoff(backoff);
@@ -213,7 +245,7 @@ public class PaxosLoop {
         this.timestamp = this.server_state.my_id;
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
-        this.learn_messages_received = new VersionedValue(0, -1);
+        this.learn_messages_received = new ArrayList<>(Arrays.asList(0, -1, this.curr_index));
         this.in_paxos_instance = false;
     }
 
@@ -230,6 +262,6 @@ public class PaxosLoop {
     }
 
     synchronized public void wakeup() {
-        notifyAll();
+        notify();
     }
 }

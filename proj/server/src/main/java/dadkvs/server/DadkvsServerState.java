@@ -84,6 +84,11 @@ public class DadkvsServerState {
         return my_id >= configuration && my_id < configuration + 3;
     }
 
+    // If I'm proposer and leader
+    public boolean iAmProposer() {
+        return i_am_leader && inConfiguration();
+    }
+
     public void updateValue(int value, int timestamp) {
         this.paxos_loop.last_seen_value.setValue(value);
         this.paxos_loop.last_seen_value.setVersion(timestamp);
@@ -93,7 +98,7 @@ public class DadkvsServerState {
         this.paxos_loop.timestamp = (timestamp / n_servers + 1) * n_servers + my_id;
     }
 
-    public void resetPaxosInstanceValues() {
+    public void resetPaxosInstance() {
         paxos_loop.resetPaxosInstanceValues();
         paxos_loop.wakeup();
         requests_loop.wakeup();
