@@ -35,8 +35,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase1timestamp = request.getPhase1Timestamp();
         DadkvsPaxos.PhaseOneReply response;
 
-        if ((!this.server_state.i_am_leader || phase1timestamp % n_servers == this.server_state.my_id)
-                && phase1timestamp >= this.loop.last_seen_timestamp) {
+        if (phase1timestamp >= this.loop.last_seen_timestamp) {
+
 
             this.loop.last_seen_timestamp = phase1timestamp;
             // for debug purposes
@@ -76,8 +76,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         // for debug purposes
         System.out.println("Receive phase two request: " + request);
 
-        if ((!this.server_state.i_am_leader || phase2timestamp % n_servers == this.server_state.my_id)
-                && phase2timestamp >= this.loop.last_seen_timestamp) {
+        if (phase2timestamp >= this.loop.last_seen_timestamp) {
             this.server_state.updateValue(phase2value, phase2timestamp);
 
             // for debug purposes
@@ -127,11 +126,12 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                 this.loop.learn_messages_received.set(1, learntimestamp);
 
             } else if (learntimestamp == this.loop.learn_messages_received.get(1)) {
-                this.loop.learn_messages_received.set(0, this.loop.learn_messages_received.get(0) + 1);
+                this.loop.learn_messages_received.set(0, this.loop.learn_messages_received.getFirst() + 1);
 
-                if (this.loop.learn_messages_received.get(0) == 2) { //!FIXME: should be 2 or 3??
+                if (this.loop.learn_messages_received.getFirst() == 2) { //!FIXME: should be 2 or 3??
                    this.server_state.pendingRequestsForProcessing.put(learnvalue, learnindex);
                    this.server_state.pendingRequestsForPaxos.remove("" + learnvalue);
+                   this.server_state.orderedRequestsByPaxos.put(learnvalue, learnindex);
                    this.server_state.resetPaxosInstance();
                }
             }
@@ -165,7 +165,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                 = new GenericResponseCollector<>(learn_responses, n_servers);
 
         // For debug purposes
-        System.out.println("LEARN sending request to all learners for index: " + this.loop.curr_index + " and timestamp: " + this.loop.timestamp);
+        System.out.println("LEARN sending request to all learners for index: " + index + " and timestamp: " + timestamp);
 
         // Request is sent for learners (every server)
         for (int i = 0; i < n_servers; i++) {

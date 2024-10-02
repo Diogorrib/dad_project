@@ -8,10 +8,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.logging.Handler;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
 
 public class PaxosLoop {
     DadkvsServerState server_state;
@@ -20,7 +17,6 @@ public class PaxosLoop {
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
 
     private static final Logger logger = Logger.getLogger(PaxosLoop.class.getName());
-
 
     int            curr_index;
     int            timestamp;
@@ -31,6 +27,7 @@ public class PaxosLoop {
     List<Integer> learn_messages_received; //List of 3 elements (n_responses, timestamp, Index)
     int            next_to_process;         //next index to be processed
 
+    /*
     static {
         // Set a custom formatter to include the method name
         for (Handler handler : Logger.getLogger("").getHandlers()) {
@@ -50,7 +47,7 @@ public class PaxosLoop {
             });
         }
     }
-
+    */
 
     public PaxosLoop(DadkvsServerState state) {
         this.server_state = state;
@@ -75,14 +72,24 @@ public class PaxosLoop {
     }
 
     synchronized public void startPaxos(int reqid) {
-        this.server_state.pendingRequestsForPaxos.add("" + reqid);
-        waitPreviousConsensus();
+        if (this.server_state.orderedRequestsByPaxos.get(reqid) != null) {
+            if (this.server_state.pendingRequestsForPaxos.isEmpty()) {
+                return;
+            }
+        } else {
+            this.server_state.pendingRequestsForPaxos.add("" + reqid);
+        }
+
+        //waitPreviousConsensus();
         this.in_paxos_instance = true;
 
         while (this.in_paxos_instance) {
             //I'm a proposer and leader
             if (this.server_state.iAmProposer()) {
                 proposePaxos(reqid);
+                if (!this.in_paxos_instance || !this.server_state.iAmProposer()) { //FIXME: OR in orderedRequests
+                    return;
+                }
             }
             try {
                 logger.info("Waiting");
@@ -99,9 +106,11 @@ public class PaxosLoop {
         while (!phasetwo_completed) {
             boolean phaseone_completed = false;
             BackOff backoff = new BackOff();
+            if (!this.in_paxos_instance || !this.server_state.iAmProposer()) {
+                return;
+            }
             while (!phaseone_completed) {
-
-                if (!this.server_state.iAmProposer() /*|| this.give_up*/) {
+                if (!this.in_paxos_instance || !this.server_state.iAmProposer()) {
                     return;
                 }
 

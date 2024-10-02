@@ -25,6 +25,7 @@ public class DadkvsServerState {
 
     // <reqId, index>
     TreeMap<Integer, Integer> pendingRequestsForProcessing;
+    TreeMap<Integer, Integer> orderedRequestsByPaxos;
 
     static final int n_servers = 5;
     ManagedChannel[] channels;
@@ -45,6 +46,7 @@ public class DadkvsServerState {
         configuration = 0;
         pendingRequestsForPaxos = new ArrayList<>();
         pendingRequestsForProcessing = new TreeMap<>();
+        orderedRequestsByPaxos = new TreeMap<>();
     }
 
     public void initComms() {

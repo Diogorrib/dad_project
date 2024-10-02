@@ -32,6 +32,13 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         int reqid = request.getReqid();
         int key = request.getKey();
+
+        // 1- adicionar o request à list de nao processados
+        // 2- avisa o paxos loop que um request novo chegou
+        // 3- <reqid, observer> para quando o paxos loop acabar
+        // 4- paxos acaba (no learner) de ordenar e faz notify ao main loop
+        // 5- saber a que cliente responder com o pedido ordenado (no observer)
+
         splitThreads(reqid);
         delay();
 
@@ -130,6 +137,12 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
     private void finishRequestProcess() {
         this.server_state.paxos_loop.next_to_process++;
+        System.out.println("####################################");
+        for (int i = 1; i < 11; i++) {
+            System.out.println("value: " + this.server_state.store.read(i).getValue());
+            System.out.println("version: " + this.server_state.store.read(i).getVersion());
+        }
+        System.out.println("####################################");
         if (!this.server_state.pendingRequestsForProcessing.isEmpty()) {
             this.server_state.requests_loop.wakeup();
         }
