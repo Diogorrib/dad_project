@@ -20,18 +20,18 @@ public class DadkvsServerState {
     PaxosLoop       paxos_loop;
     Thread          main_loop_worker;
     Thread          paxos_loop_worker;
-    int             configuration; // for paxos
+    int             configuration;
 
-    // <reqId>
+    // <reqId> -> requests to be decided order in Paxos
     ArrayList<String> pendingRequestsForPaxos;
 
-    // <index, reqId>
+    // <index, reqId> -> requests ready to be executed (consensus reached for these requests)
     TreeMap<Integer, Integer> pendingRequestsForProcessing;
 
-    // <reqId, index>
+    // <reqId, index> -> requests for which consensus has already been reached
     TreeMap<Integer, Integer> orderedRequestsByPaxos;
 
-    // <reqId, [key]> || <reqid, [key1, v1, key2, v2, Wkey, Wval]>
+    // the data from pending requests, read = <reqId, [key]> or commit = <reqId, [key1, v1, key2, v2, wKey, wVal]>
     TreeMap<Integer, ArrayList<Integer>> pendingRequestsData;
 
     TreeMap<Integer, StreamObserver<DadkvsMain.ReadReply>> pendingRequestsReadObserver;
@@ -49,13 +49,6 @@ public class DadkvsServerState {
         store_size = kv_size;
         store = new KeyValueStore(kv_size);
 
-        main_loop = new MainLoop(this);
-        paxos_loop = new PaxosLoop(this);
-        main_loop_worker = new Thread (main_loop);
-        main_loop_worker.start();
-        paxos_loop_worker = new Thread (paxos_loop);
-        paxos_loop_worker.start();
-
         configuration = 0;
         pendingRequestsForPaxos = new ArrayList<>();
         pendingRequestsForProcessing = new TreeMap<>();
@@ -63,6 +56,13 @@ public class DadkvsServerState {
         pendingRequestsData = new TreeMap<>();
         pendingRequestsReadObserver = new TreeMap<>();
         pendingRequestsCommitObserver = new TreeMap<>();
+
+        main_loop = new MainLoop(this);
+        paxos_loop = new PaxosLoop(this);
+        main_loop_worker = new Thread (main_loop);
+        main_loop_worker.start();
+        paxos_loop_worker = new Thread (paxos_loop);
+        paxos_loop_worker.start();
     }
 
     public void initComms() {

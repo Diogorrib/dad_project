@@ -85,7 +85,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         if (delayEnabled) {
             Random random = new Random();
-            int randomDelay = 100 + random.nextInt(9900);
+            int randomDelay = 100 + random.nextInt(2900);
 
             // for debug purposes
             System.out.println("delaying " + randomDelay + " milliseconds");

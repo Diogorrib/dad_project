@@ -58,12 +58,12 @@ public class Paxos {
             //I'm a proposer and leader
             if (this.server_state.toProposeValues()) {
                 proposePaxos();
-                if (toGiveUpFromThisInstance()) { //FIXME: OR in orderedRequests
+                if (toGiveUpFromThisInstance()) {
                     return;
                 }
             }
             try {
-                wait(); //FIXME: All are stuck here (if proposePaxos() with success return; ??)
+                wait();
             } catch (InterruptedException _) {
             }
         }
@@ -91,9 +91,6 @@ public class Paxos {
             }
             // for debug purposes
             System.out.println("Phase1 completed");
-
-//            if(this.server_state.pendingRequestsForPaxos.isEmpty())
-//                return;
 
             phasetwo_completed = phase2();
 
@@ -162,13 +159,15 @@ public class Paxos {
                     return false;
                 }
 
+                int value = phaseone_reply.getPhase1Value();
                 //Got accepted value from previous phase 2, update last_seen_value
-                if (timestamp > this.last_seen_value.getVersion()){
-                    int value = phaseone_reply.getPhase1Value();
+                if (timestamp > this.last_seen_value.getVersion()
+                        && this.server_state.orderedRequestsByPaxos.get(value) == null) {
+                    updateValue(value, timestamp);
+
                     // for debug purposes
                     System.out.println("Phase1 acceptor already accepted value: "
                             + value + " with timestamp: " + timestamp);
-                    updateValue(value, timestamp);
                 }
             }
             return true;

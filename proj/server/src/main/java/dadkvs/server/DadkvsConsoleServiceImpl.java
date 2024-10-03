@@ -28,7 +28,6 @@ public class DadkvsConsoleServiceImpl extends DadkvsConsoleServiceGrpc.DadkvsCon
         // for debug purposes
         System.out.println("I am the leader = " + this.server_state.i_am_leader);
 
-        //this.server_state.main_loop.wakeup();
         this.server_state.paxos_loop.paxos.wakeup();
 
         DadkvsConsole.SetLeaderReply response = DadkvsConsole.SetLeaderReply.newBuilder()

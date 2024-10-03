@@ -4,6 +4,8 @@ import io.grpc.BindableService;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 
+import java.util.concurrent.TimeUnit;
+
 
 public class DadkvsServer {
 
@@ -57,10 +59,13 @@ public class DadkvsServer {
             try {
                 server_state.terminateComms();
                 server.shutdown();
-                server.awaitTermination();
+                if (!server.awaitTermination(5, TimeUnit.SECONDS)) {
+                    server.shutdownNow();
+                }
             } catch (InterruptedException e) {
                 server.shutdownNow();
             }
+            System.exit(0);
         }
     }
 }
