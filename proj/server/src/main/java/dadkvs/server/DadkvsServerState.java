@@ -1,31 +1,41 @@
 package dadkvs.server;
 
+import dadkvs.DadkvsMain;
 import dadkvs.DadkvsPaxosServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
 import java.util.TreeMap;
 
 public class DadkvsServerState {
-    boolean        i_am_leader;
-    int            debug_mode;
-    int            base_port;
-    int            my_id;
-    int            store_size;
-    KeyValueStore  store;
-    MainLoop       main_loop;
-    PaxosLoop      paxos_loop;
-    RequestsLoop   requests_loop;
-    Thread         main_loop_worker;
-    int            configuration; // for paxos
+    boolean         i_am_leader;
+    int             debug_mode;
+    int             base_port;
+    int             my_id;
+    int             store_size;
+    KeyValueStore   store;
+    MainLoop        main_loop;
+    PaxosLoop       paxos_loop;
+    Thread          main_loop_worker;
+    Thread          paxos_loop_worker;
+    int             configuration; // for paxos
 
     // <reqId>
     ArrayList<String> pendingRequestsForPaxos;
 
-    // <reqId, index>
+    // <index, reqId>
     TreeMap<Integer, Integer> pendingRequestsForProcessing;
+
+    // <reqId, index>
     TreeMap<Integer, Integer> orderedRequestsByPaxos;
+
+    // <reqId, [key]> || <reqid, [key1, v1, key2, v2, Wkey, Wval]>
+    TreeMap<Integer, ArrayList<Integer>> pendingRequestsData;
+
+    TreeMap<Integer, StreamObserver<DadkvsMain.ReadReply>> pendingRequestsReadObserver;
+    TreeMap<Integer, StreamObserver<DadkvsMain.CommitReply>> pendingRequestsCommitObserver;
 
     static final int n_servers = 5;
     ManagedChannel[] channels;
@@ -38,15 +48,21 @@ public class DadkvsServerState {
         debug_mode = 0;
         store_size = kv_size;
         store = new KeyValueStore(kv_size);
-        paxos_loop = new PaxosLoop(this);
-        requests_loop = new RequestsLoop(this);
+
         main_loop = new MainLoop(this);
+        paxos_loop = new PaxosLoop(this);
         main_loop_worker = new Thread (main_loop);
         main_loop_worker.start();
+        paxos_loop_worker = new Thread (paxos_loop);
+        paxos_loop_worker.start();
+
         configuration = 0;
         pendingRequestsForPaxos = new ArrayList<>();
         pendingRequestsForProcessing = new TreeMap<>();
         orderedRequestsByPaxos = new TreeMap<>();
+        pendingRequestsData = new TreeMap<>();
+        pendingRequestsReadObserver = new TreeMap<>();
+        pendingRequestsCommitObserver = new TreeMap<>();
     }
 
     public void initComms() {
@@ -55,9 +71,6 @@ public class DadkvsServerState {
         // set servers
         for (int i = 0; i < n_servers; i++) {
             int target_port = base_port + i;
-
-            // FIXME do we really need all that stubs for all replicas
-
             targets[i] = "localhost:" + target_port;
             System.out.printf("targets[%d] = %s%n", i, targets[i]);
         }
@@ -87,22 +100,26 @@ public class DadkvsServerState {
     }
 
     // If I'm proposer and leader
-    public boolean iAmProposer() {
+    public boolean toProposeValues() {
         return i_am_leader && inConfiguration();
     }
 
-    public void updateValue(int value, int timestamp) {
-        this.paxos_loop.last_seen_value.setValue(value);
-        this.paxos_loop.last_seen_value.setVersion(timestamp);
+    public void endPaxos(int value, int index) {
+        addRequestForProcessing(value, index);
+        pendingRequestsForPaxos.remove("" + value);
+        orderedRequestsByPaxos.put(value, index);
+        nextPaxosInstance();
     }
 
-    public void increaseTimestamp(int timestamp) {
-        this.paxos_loop.timestamp = (timestamp / n_servers + 1) * n_servers + my_id;
-    }
-
-    public void resetPaxosInstance() {
-        paxos_loop.resetPaxosInstanceValues();
+    private void nextPaxosInstance() {
+        paxos_loop.paxos.curr_index++;
+        paxos_loop.paxos.resetPaxosValues();
+        paxos_loop.paxos.wakeup();
         paxos_loop.wakeup();
-        requests_loop.wakeup();
+    }
+
+    private void addRequestForProcessing(int value, int index) {
+        pendingRequestsForProcessing.put(index, value);
+        main_loop.wakeup();
     }
 }

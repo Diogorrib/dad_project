@@ -1,6 +1,4 @@
-
 package dadkvs.server;
-
 
 import dadkvs.DadkvsPaxos;
 import dadkvs.DadkvsPaxosServiceGrpc;
@@ -14,13 +12,13 @@ import java.util.ArrayList;
 public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosServiceImplBase {
 
     DadkvsServerState server_state;
-    PaxosLoop loop;
+    Paxos paxos;
     int n_servers;
 
 
     public DadkvsPaxosServiceImpl(DadkvsServerState state) {
         this.server_state = state;
-        this.loop = state.paxos_loop;
+        this.paxos = state.paxos_loop.paxos;
         this.n_servers = DadkvsServerState.n_servers;
     }
 
@@ -35,10 +33,9 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase1timestamp = request.getPhase1Timestamp();
         DadkvsPaxos.PhaseOneReply response;
 
-        if (phase1timestamp >= this.loop.last_seen_timestamp) {
+        if (phase1timestamp >= this.paxos.last_seen_timestamp) {
+            this.paxos.last_seen_timestamp = phase1timestamp;
 
-
-            this.loop.last_seen_timestamp = phase1timestamp;
             // for debug purposes
             System.out.println("Phase1 accepted for index " + phase1index + " and timestamp " + phase1timestamp);
 
@@ -46,8 +43,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .setPhase1Config(phase1config)
                     .setPhase1Index(phase1index)
                     .setPhase1Accepted(true)
-                    .setPhase1Value(this.loop.last_seen_value.getValue())
-                    .setPhase1Timestamp(this.loop.last_seen_value.getVersion())
+                    .setPhase1Value(this.paxos.last_seen_value.getValue())
+                    .setPhase1Timestamp(this.paxos.last_seen_value.getVersion())
                     .build();
         } else {
             // for debug purposes
@@ -57,7 +54,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .setPhase1Config(phase1config)
                     .setPhase1Index(phase1index)
                     .setPhase1Accepted(false)
-                    .setPhase1Timestamp(this.loop.last_seen_timestamp)
+                    .setPhase1Timestamp(this.paxos.last_seen_timestamp)
                     .build();
         }
 
@@ -67,20 +64,20 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void phasetwo(DadkvsPaxos.PhaseTwoRequest request, StreamObserver<DadkvsPaxos.PhaseTwoReply> responseObserver) {
+        // for debug purposes
+        System.out.println("Receive phase two request: " + request);
+
         int phase2config = request.getPhase2Config();
         int phase2index = request.getPhase2Index();
         int phase2value = request.getPhase2Value();
         int phase2timestamp = request.getPhase2Timestamp();
         DadkvsPaxos.PhaseTwoReply response;
 
-        // for debug purposes
-        System.out.println("Receive phase two request: " + request);
-
-        if (phase2timestamp >= this.loop.last_seen_timestamp) {
-            this.server_state.updateValue(phase2value, phase2timestamp);
+        if (phase2timestamp >= this.paxos.last_seen_timestamp) {
+            this.paxos.updateValue(phase2value, phase2timestamp);
 
             // for debug purposes
-            System.out.println("Phase2 value " + phase2value + " accepted for index " + phase2index + " and timestamp " + phase2timestamp);
+            System.out.println("Phase2 accepted with value " + phase2value + " for index " + phase2index + " and timestamp " + phase2timestamp);
 
             response = DadkvsPaxos.PhaseTwoReply.newBuilder()
                     .setPhase2Config(phase2config)
@@ -89,11 +86,9 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .build();
 
             Context.current().fork().run(() -> {
-                send4Learners(phase2timestamp, phase2index);
+                send4Learners(phase2timestamp, phase2index, phase2value);
             });
-
         } else {
-
             // for debug purposes
             System.out.println("Phase2 rejected for index " + phase2index + " and timestamp " + phase2timestamp);
 
@@ -116,31 +111,17 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int learnconfig = request.getLearnconfig();
         int learnindex = request.getLearnindex();
         int learnvalue = request.getLearnvalue();
-        int learntimestamp = request.getLearntimestamp(); //!FIXME: why do we need the timestamp here??
+        int learntimestamp = request.getLearntimestamp();
 
         // Save request to be processed in case a Majority of servers accepted this request
-        if (learnindex == this.loop.learn_messages_received.get(2)) {
-
-            if (learntimestamp > this.loop.learn_messages_received.get(1)) {
-                this.loop.learn_messages_received.set(0, 1);
-                this.loop.learn_messages_received.set(1, learntimestamp);
-
-            } else if (learntimestamp == this.loop.learn_messages_received.get(1)) {
-                this.loop.learn_messages_received.set(0, this.loop.learn_messages_received.getFirst() + 1);
-
-                if (this.loop.learn_messages_received.getFirst() == 2) { //!FIXME: should be 2 or 3??
-                   this.server_state.pendingRequestsForProcessing.put(learnvalue, learnindex);
-                   this.server_state.pendingRequestsForPaxos.remove("" + learnvalue);
-                   this.server_state.orderedRequestsByPaxos.put(learnvalue, learnindex);
-                   this.server_state.resetPaxosInstance();
-               }
-            }
+        if (learnindex == this.paxos.learn_messages_received.get(2)) {
+            updateLearnMessagesReceived(learntimestamp, learnvalue, learnindex);
         }
 
         // For debug purposes
-        System.out.println("Learn value " + learnvalue + " for index " + learnindex + " and timestamp " + learntimestamp);
+        System.out.println("Learn accepted with value " + learnvalue + " for index " + learnindex + " and timestamp " + learntimestamp);
 
-        DadkvsPaxos.LearnReply response = DadkvsPaxos.LearnReply.newBuilder() //!FIXME: Always true???
+        DadkvsPaxos.LearnReply response = DadkvsPaxos.LearnReply.newBuilder()
                 .setLearnconfig(learnconfig)
                 .setLearnindex(learnindex)
                 .setLearnaccepted(true)
@@ -150,13 +131,27 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         responseObserver.onCompleted();
     }
 
-    // Acceptor when accepts Phase2 sends ACCEPT to all learners
-    private void send4Learners(int timestamp, int index) {
-        DadkvsPaxos.LearnRequest.Builder learn_request = DadkvsPaxos.LearnRequest.newBuilder();
+    private void updateLearnMessagesReceived(int timestamp, int value, int index) {
+        if (timestamp > this.paxos.learn_messages_received.get(1)) {
+            this.paxos.learn_messages_received.set(0, 1);
+            this.paxos.learn_messages_received.set(1, timestamp);
 
+        } else if (timestamp == this.paxos.learn_messages_received.get(1)) {
+            this.paxos.learn_messages_received.set(0, this.paxos.learn_messages_received.getFirst() + 1);
+
+            // Save request to be processed in case a Majority of servers accepted this request
+            if (this.paxos.learn_messages_received.getFirst() == 2) {
+                this.server_state.endPaxos(value, index);
+            }
+        }
+    }
+
+    // Acceptor when accepts Phase2 sends ACCEPT to all learners
+    private void send4Learners(int timestamp, int index, int value) {
+        DadkvsPaxos.LearnRequest.Builder learn_request = DadkvsPaxos.LearnRequest.newBuilder();
         learn_request.setLearnconfig(this.server_state.configuration)
                 .setLearnindex(index)
-                .setLearnvalue(this.loop.last_seen_value.getValue())
+                .setLearnvalue(value)
                 .setLearntimestamp(timestamp);
 
         // Send request
@@ -165,7 +160,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                 = new GenericResponseCollector<>(learn_responses, n_servers);
 
         // For debug purposes
-        System.out.println("LEARN sending request to all learners for index: " + index + " and timestamp: " + timestamp);
+        System.out.println("Learn sending request to all acceptors for index: " + index + " and timestamp: "
+                + timestamp + " with value: " + value);
 
         // Request is sent for learners (every server)
         for (int i = 0; i < n_servers; i++) {
