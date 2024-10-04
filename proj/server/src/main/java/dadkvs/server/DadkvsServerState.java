@@ -105,17 +105,22 @@ public class DadkvsServerState {
     }
 
     public void endPaxos(int value, int index) {
-        addRequestForProcessing(value, index);
         pendingRequestsForPaxos.remove("" + value);
         orderedRequestsByPaxos.put(value, index);
+        addRequestForProcessing(value, index);
         nextPaxosInstance();
     }
 
     private void nextPaxosInstance() {
         paxos_loop.paxos.curr_index++;
         paxos_loop.paxos.resetPaxosValues();
-        paxos_loop.paxos.wakeup();
-        paxos_loop.wakeup();
+        if (this.paxos_loop.paxos.in_paxos_instance) {
+            this.paxos_loop.paxos.in_paxos_instance = false;
+            paxos_loop.paxos.wakeup();
+            paxos_loop.wakeup();
+        } else {
+            paxos_loop.wakeup();
+        }
     }
 
     private void addRequestForProcessing(int value, int index) {

@@ -34,7 +34,6 @@ public class Paxos {
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
         this.learn_messages_received = new ArrayList<>(Arrays.asList(0, -1, this.curr_index));
-        this.in_paxos_instance = false;
     }
 
     synchronized public void wakeup() {
@@ -53,7 +52,6 @@ public class Paxos {
 
     synchronized public void startPaxos() {
         this.in_paxos_instance = true;
-        System.out.println("Starting paxos");
         while (this.in_paxos_instance) {
             //I'm a proposer and leader
             if (this.server_state.toProposeValues()) {

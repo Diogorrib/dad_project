@@ -39,7 +39,7 @@ public class MainLoop implements Runnable {
         Context.current().fork().run(() -> {
             Integer reqid = this.server_state.pendingRequestsForProcessing.get(next_to_process);
             if (reqid != null && this.server_state.pendingRequestsData.get(reqid) != null) {
-                replyToClient(reqid);
+                replyToClient(reqid, next_to_process);
             }
         });
 
@@ -59,22 +59,22 @@ public class MainLoop implements Runnable {
         notify();
     }
 
-    private void replyToClient(int reqid) {
+    private void replyToClient(int reqid, int index) {
         ArrayList<Integer> request = this.server_state.pendingRequestsData.get(reqid);
         if (request.size() == 1) {
-            readReply(reqid, request);
+            readReply(reqid, index, request);
         } else {
-            commitReply(reqid, request);
+            commitReply(reqid, index, request);
         }
     }
 
-    private void readReply(int reqid, ArrayList<Integer> readElements) {
+    private void readReply(int reqid, int index, ArrayList<Integer> readElements) {
         int key = readElements.get(0);
 
         VersionedValue vv = this.server_state.store.read(key);
 
         // ensure that request was processed before proceeding to the next one
-        finishRequestProcess(reqid);
+        finishRequestProcess(reqid, index);
 
         DadkvsMain.ReadReply response = DadkvsMain.ReadReply.newBuilder()
                 .setReqid(reqid).setValue(vv.getValue()).setTimestamp(vv.getVersion()).build();
@@ -86,7 +86,7 @@ public class MainLoop implements Runnable {
         responseObserver.onCompleted();
     }
 
-    private void commitReply(int reqid, ArrayList<Integer> commitElements) {
+    private void commitReply(int reqid, int index, ArrayList<Integer> commitElements) {
         int key1 = commitElements.get(0);
         int version1 = commitElements.get(1);
         int key2 = commitElements.get(2);
@@ -103,11 +103,11 @@ public class MainLoop implements Runnable {
             this.server_state.configuration = writeval;
         }
 
-        // ensure that request was processed before proceeding to the next one
-        finishRequestProcess(reqid);
-
         // for debug purposes
         System.out.println("Result is ready for request with reqid " + reqid);
+
+        // ensure that request was processed before proceeding to the next one
+        finishRequestProcess(reqid, index);
 
         DadkvsMain.CommitReply response = DadkvsMain.CommitReply.newBuilder()
                 .setReqid(reqid).setAck(result).build();
@@ -119,9 +119,9 @@ public class MainLoop implements Runnable {
         responseObserver.onCompleted();
     }
 
-    private void finishRequestProcess(int reqid) {
+    private void finishRequestProcess(int reqid, int index) {
         this.server_state.pendingRequestsData.remove(reqid);
-        this.server_state.pendingRequestsForProcessing.remove(reqid);
+        this.server_state.pendingRequestsForProcessing.remove(index);
         this.next_to_process++;
         if (!this.server_state.pendingRequestsForProcessing.isEmpty()) {
             wakeup();
