@@ -23,17 +23,17 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
     @Override
     public void read(DadkvsMain.ReadRequest request, StreamObserver<DadkvsMain.ReadReply> responseObserver) {
-        if (freeze()) {
+        int reqid = request.getReqid();
+        int key = request.getKey();
+
+        if (freeze(key)) {
             System.out.println("freezed blocking read request:" + request);
             return;
         }
         // for debug purposes
         System.out.println("Receiving read request:" + request);
 
-        int reqid = request.getReqid();
-        int key = request.getKey();
-
-        delay();
+        delay(key);
 
         ArrayList<Integer> list = new ArrayList<>(List.of(key));
         this.server_state.pendingRequestsReadObserver.put(reqid, responseObserver);
@@ -42,13 +42,6 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
     @Override
     public void committx(DadkvsMain.CommitRequest request, StreamObserver<DadkvsMain.CommitReply> responseObserver) {
-        if (freeze()) {
-            System.out.println("freezed blocking commit request:" + request);
-            return;
-        }
-        // for debug purposes
-        System.out.println("Receiving commit request:" + request);
-
         int reqid = request.getReqid();
         int key1 = request.getKey1();
         int version1 = request.getVersion1();
@@ -57,7 +50,14 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         int writekey = request.getWritekey();
         int writeval = request.getWriteval();
 
-        delay();
+        if (freeze(writekey)) {
+            System.out.println("freezed blocking commit request:" + request);
+            return;
+        }
+        // for debug purposes
+        System.out.println("Receiving commit request:" + request);
+
+        delay(writekey);
 
         ArrayList<Integer> list = new ArrayList<>(Arrays.asList(key1, version1, key2, version2, writekey, writeval));
         this.server_state.pendingRequestsCommitObserver.put(reqid, responseObserver);
@@ -67,16 +67,24 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         System.out.println("reqid " + reqid + " key1 " + key1 + " v1 " + version1 + " k2 " + key2 + " v2 " + version2 + " wk " + writekey + " writeval " + writeval);
     }
 
-    private boolean freeze() {
+    private boolean freeze(int key) {
+        if (key == 0) {
+            return false;
+        }
+
         if (this.server_state.debug_mode == 2) {
             freezeEnabled = true;
         } else if (this.server_state.debug_mode == 3) {
             freezeEnabled = false;
         }
-        return freezeEnabled;
+        return freezeEnabled ;
     }
 
-    private void delay() {
+    private void delay(int key) {
+        if (key == 0) {
+            return;
+        }
+
         if (this.server_state.debug_mode == 4) {
             delayEnabled = true;
         } else if (this.server_state.debug_mode == 5) {
@@ -101,6 +109,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             this.server_state.pendingRequestsForPaxos.add("" + reqid);
         }
         this.server_state.pendingRequestsData.put(reqid, requestList);
+        System.out.println("WWWWWWWWWWWWWWWWWWWWWWWWWWWaking up Paxos Loop");
         this.server_state.paxos_loop.wakeup();
         this.server_state.main_loop.wakeup();
     }

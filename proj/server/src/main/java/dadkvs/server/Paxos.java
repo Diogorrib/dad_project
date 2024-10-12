@@ -16,24 +16,21 @@ public class Paxos {
     private static final int n_acceptors = 3;
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
 
-    int             curr_index;
+    int             index;
     int             timestamp;
     boolean         in_paxos_instance;
     int             last_seen_timestamp;
-    VersionedValue  last_seen_value;
-    List<Integer>   learn_messages_received;    //List of 3 elements (n_responses, timestamp, Index)
+    VersionedValue  last_seen_value;            // (value, timestamp)
+    VersionedValue  learn_messages_received;    // (n_responses, timestamp)
 
-    public Paxos(DadkvsServerState state) {
+    public Paxos(DadkvsServerState state, int index) {
         this.server_state = state;
-        this.curr_index = 0;
-        resetPaxosValues();
-    }
-
-    public void resetPaxosValues() {
+        this.index = index;
         this.timestamp = this.server_state.my_id;
+        this.in_paxos_instance = false;
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
-        this.learn_messages_received = new ArrayList<>(Arrays.asList(0, -1, this.curr_index));
+        this.learn_messages_received = new VersionedValue(0, -1);
     }
 
     synchronized public void wakeup() {
@@ -115,7 +112,7 @@ public class Paxos {
     private boolean phase1() {
         DadkvsPaxos.PhaseOneRequest.Builder phaseone_request = DadkvsPaxos.PhaseOneRequest.newBuilder();
         phaseone_request.setPhase1Config(this.server_state.configuration)
-                .setPhase1Index(this.curr_index)
+                .setPhase1Index(this.index)
                 .setPhase1Timestamp(this.timestamp);
 
         //Send request
@@ -125,7 +122,7 @@ public class Paxos {
 
         // for debug purposes
         System.out.println("Phase1 sending request to all acceptors for index: "
-                + this.curr_index + " and timestamp: " + this.timestamp + "\nWaiting for "
+                + this.index + " and timestamp: " + this.timestamp + "\nWaiting for "
                 + responses_needed + " responses from acceptors");
 
         // Request is only sent for acceptors
@@ -186,7 +183,7 @@ public class Paxos {
         updateValue(value, this.timestamp);
 
         phasetwo_request.setPhase2Config(this.server_state.configuration)
-                .setPhase2Index(this.curr_index)
+                .setPhase2Index(this.index)
                 .setPhase2Value(value)
                 .setPhase2Timestamp(this.timestamp);
 
@@ -196,7 +193,7 @@ public class Paxos {
                 = new GenericResponseCollector<>(phasetwo_responses, n_acceptors);
 
         // for debug purposes
-        System.out.println("Phase2 sending request to all acceptors for index: " + this.curr_index + " and timestamp: "
+        System.out.println("Phase2 sending request to all acceptors for index: " + this.index + " and timestamp: "
                 + this.timestamp + " with value: " + value + "\nWaiting for " + responses_needed
                 + " responses from acceptors");
 

@@ -22,6 +22,8 @@ public class DadkvsServerState {
     Thread          paxos_loop_worker;
     int             configuration;
 
+    TreeMap<Integer, Paxos> paxosInstances;
+
     // <reqId> -> requests to be decided order in Paxos
     ArrayList<String> pendingRequestsForPaxos;
 
@@ -50,6 +52,7 @@ public class DadkvsServerState {
         store = new KeyValueStore(kv_size);
 
         configuration = 0;
+        paxosInstances = new TreeMap<>();
         pendingRequestsForPaxos = new ArrayList<>();
         pendingRequestsForProcessing = new TreeMap<>();
         orderedRequestsByPaxos = new TreeMap<>();
@@ -104,27 +107,35 @@ public class DadkvsServerState {
         return i_am_leader && inConfiguration();
     }
 
-    public void endPaxos(int value, int index) {
+    synchronized public void endPaxos(Paxos paxos_instance, int value, int index) {
+        System.out.println("LOCKED FOR ENDPAXOS: " + index);
         pendingRequestsForPaxos.remove("" + value);
         orderedRequestsByPaxos.put(value, index);
         addRequestForProcessing(value, index);
-        nextPaxosInstance();
+        nextPaxosInstance(paxos_instance, index);
+        System.out.println("UNLOCKED FOR ENDPAXOS: " + index);
     }
 
-    private void nextPaxosInstance() {
-        paxos_loop.paxos.curr_index++;
-        paxos_loop.paxos.resetPaxosValues();
-        if (this.paxos_loop.paxos.in_paxos_instance) {
-            this.paxos_loop.paxos.in_paxos_instance = false;
-            paxos_loop.paxos.wakeup();
-            paxos_loop.wakeup();
-        } else {
-            paxos_loop.wakeup();
+    public void nextPaxosInstance(Paxos paxos_instance, int index) {
+        paxos_loop.curr_index = index + 1;
+        if (paxos_instance.in_paxos_instance) {
+            paxos_instance.in_paxos_instance = false;
+            paxos_instance.wakeup();
         }
+        paxos_loop.wakeup();
     }
 
     private void addRequestForProcessing(int value, int index) {
         pendingRequestsForProcessing.put(index, value);
         main_loop.wakeup();
+    }
+
+    synchronized public Paxos createPaxosInstance(int index) {
+        System.out.println("LOCKED FOR CREATEPAXOS: " + index);
+        if (paxosInstances.get(index) == null) {
+            paxosInstances.put(index, new Paxos(this, index));
+        }
+        System.out.println("UNLOCKED FOR CREATEPAXOS: " + index);
+        return paxosInstances.get(index);
     }
 }
