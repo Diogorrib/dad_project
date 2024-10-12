@@ -31,9 +31,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase1timestamp = request.getPhase1Timestamp();
         DadkvsPaxos.PhaseOneReply response;
 
-        System.out.println("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCREATED1");
         Paxos paxos_instance = this.server_state.createPaxosInstance(phase1index);
-        System.out.println("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCREATED2");
         if (phase1timestamp >= paxos_instance.last_seen_timestamp) {
             paxos_instance.last_seen_timestamp = phase1timestamp;
 
@@ -58,7 +56,6 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .setPhase1Timestamp(paxos_instance.last_seen_timestamp)
                     .build();
         }
-        System.out.println("OOOOOOOOOOOOOOOOOOOOOOKKKKKKKKKKKKKKKKKKKKKKK");
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -121,7 +118,6 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         // Save request to be processed in case a Majority of servers accepted this request
         //if (learnindex == paxos_instance.learn_messages_received.get(2)) {
         if (updateLearnMessagesReceived(paxos_instance, learntimestamp)) {
-            System.out.println("ENDING PAXOS FOR INDEX =" + learnindex);
             this.server_state.endPaxos(paxos_instance, learnvalue, learnindex);
         }
 

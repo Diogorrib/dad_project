@@ -109,7 +109,6 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             this.server_state.pendingRequestsForPaxos.add("" + reqid);
         }
         this.server_state.pendingRequestsData.put(reqid, requestList);
-        System.out.println("WWWWWWWWWWWWWWWWWWWWWWWWWWWaking up Paxos Loop");
         this.server_state.paxos_loop.wakeup();
         this.server_state.main_loop.wakeup();
     }

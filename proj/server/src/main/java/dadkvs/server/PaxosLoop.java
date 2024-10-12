@@ -19,20 +19,21 @@ public class PaxosLoop implements Runnable {
         }
     }
 
-    synchronized public void doWork() {
+    public void doWork() {
         System.out.println("Paxos loop do work start");
 
         if (!this.server_state.pendingRequestsForPaxos.isEmpty()) {
-            System.out.println("INDEX = " + this.curr_index);
             Paxos paxos = this.server_state.createPaxosInstance(curr_index);
             paxos.startPaxos();
         }
 
-        while (this.server_state.pendingRequestsForPaxos.isEmpty()) {
-            System.out.println("Paxos loop do work: waiting");
-            try {
-                wait();
-            } catch (InterruptedException _) {
+        synchronized (this) {
+            while (this.server_state.pendingRequestsForPaxos.isEmpty()) {
+                System.out.println("Paxos loop do work: waiting");
+                try {
+                    wait();
+                } catch (InterruptedException _) {
+                }
             }
         }
         System.out.println("Paxos loop do work finish");

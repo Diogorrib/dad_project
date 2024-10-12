@@ -108,12 +108,10 @@ public class DadkvsServerState {
     }
 
     synchronized public void endPaxos(Paxos paxos_instance, int value, int index) {
-        System.out.println("LOCKED FOR ENDPAXOS: " + index);
         pendingRequestsForPaxos.remove("" + value);
         orderedRequestsByPaxos.put(value, index);
         addRequestForProcessing(value, index);
         nextPaxosInstance(paxos_instance, index);
-        System.out.println("UNLOCKED FOR ENDPAXOS: " + index);
     }
 
     public void nextPaxosInstance(Paxos paxos_instance, int index) {
@@ -131,11 +129,9 @@ public class DadkvsServerState {
     }
 
     synchronized public Paxos createPaxosInstance(int index) {
-        System.out.println("LOCKED FOR CREATEPAXOS: " + index);
         if (paxosInstances.get(index) == null) {
             paxosInstances.put(index, new Paxos(this, index));
         }
-        System.out.println("UNLOCKED FOR CREATEPAXOS: " + index);
         return paxosInstances.get(index);
     }
 }
