@@ -5,9 +5,7 @@ import dadkvs.util.CollectorStreamObserver;
 import dadkvs.util.GenericResponseCollector;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
-import java.util.List;
 
 public class Paxos {
     DadkvsServerState server_state;
@@ -19,6 +17,7 @@ public class Paxos {
     int             index;
     int             timestamp;
     boolean         in_paxos_instance;
+    int             configuration;
     int             last_seen_timestamp;
     VersionedValue  last_seen_value;            // (value, timestamp)
     VersionedValue  learn_messages_received;    // (n_responses, timestamp)
@@ -28,6 +27,7 @@ public class Paxos {
         this.index = index;
         this.timestamp = this.server_state.my_id;
         this.in_paxos_instance = false;
+        configuration = this.server_state.configuration;
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
         this.learn_messages_received = new VersionedValue(0, -1);
@@ -51,7 +51,7 @@ public class Paxos {
         this.in_paxos_instance = true;
         while (this.in_paxos_instance) {
             //I'm a proposer and leader
-            if (this.server_state.toProposeValues()) {
+            if (toProposeValues()) {
                 proposePaxos();
                 if (toGiveUpFromThisInstance()) {
                     return;
@@ -96,8 +96,18 @@ public class Paxos {
         System.out.println("Phase2 completed");
     }
 
+    private boolean inConfiguration() {
+        return (this.server_state.my_id >= this.configuration
+                && this.server_state.my_id < this.configuration + n_acceptors);
+    }
+
+    // If I'm proposer and leader
+    private boolean toProposeValues() {
+        return this.server_state.i_am_leader && inConfiguration();
+    }
+
     private boolean toGiveUpFromThisInstance() {
-        return (!this.in_paxos_instance || !this.server_state.toProposeValues() || this.server_state.pendingRequestsForPaxos.isEmpty());
+        return (!this.in_paxos_instance || !toProposeValues() || this.server_state.pendingRequestsForPaxos.isEmpty());
     }
 
     private void increaseTimestamp(int timestamp) {
@@ -111,7 +121,7 @@ public class Paxos {
 
     private boolean phase1() {
         DadkvsPaxos.PhaseOneRequest.Builder phaseone_request = DadkvsPaxos.PhaseOneRequest.newBuilder();
-        phaseone_request.setPhase1Config(this.server_state.configuration)
+        phaseone_request.setPhase1Config(this.configuration)
                 .setPhase1Index(this.index)
                 .setPhase1Timestamp(this.timestamp);
 
@@ -126,7 +136,7 @@ public class Paxos {
                 + responses_needed + " responses from acceptors");
 
         // Request is only sent for acceptors
-        for (int i = this.server_state.configuration; i < this.server_state.configuration + n_acceptors; i++) {
+        for (int i = this.configuration; i < this.configuration + n_acceptors; i++) {
             CollectorStreamObserver<DadkvsPaxos.PhaseOneReply> phaseone_observer =
                     new CollectorStreamObserver<>(phaseone_collector);
             this.server_state.async_stubs[i].phaseone(phaseone_request.build(), phaseone_observer);
@@ -182,7 +192,7 @@ public class Paxos {
 
         updateValue(value, this.timestamp);
 
-        phasetwo_request.setPhase2Config(this.server_state.configuration)
+        phasetwo_request.setPhase2Config(this.configuration)
                 .setPhase2Index(this.index)
                 .setPhase2Value(value)
                 .setPhase2Timestamp(this.timestamp);
@@ -198,7 +208,7 @@ public class Paxos {
                 + " responses from acceptors");
 
         // Request is only sent for acceptors
-        for (int i = this.server_state.configuration; i < this.server_state.configuration + n_acceptors; i++) {
+        for (int i = this.configuration; i < this.configuration + n_acceptors; i++) {
             CollectorStreamObserver<DadkvsPaxos.PhaseTwoReply> phasetwo_observer
                     = new CollectorStreamObserver<>(phasetwo_collector);
             this.server_state.async_stubs[i].phasetwo(phasetwo_request.build(), phasetwo_observer);

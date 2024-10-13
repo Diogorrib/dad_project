@@ -68,7 +68,7 @@ public class MainLoop implements Runnable {
         }
     }
 
-    private void readReply(int reqid, int index, ArrayList<Integer> readElements) {
+    public void readReply(int reqid, int index, ArrayList<Integer> readElements) {
         int key = readElements.get(0);
 
         VersionedValue vv = this.server_state.store.read(key);
@@ -98,10 +98,10 @@ public class MainLoop implements Runnable {
         TransactionRecord txrecord = new TransactionRecord(key1, version1, key2, version2, writekey, writeval, this.timestamp);
         boolean result = this.server_state.store.commit(txrecord);
 
-        //Update configuration attribute on server_state
-        if (writekey == 0 && result) {
-            this.server_state.configuration = writeval;
-        }
+//        //Update configuration attribute on server_state
+//        if (writekey == 0 && result) {
+//            this.server_state.configuration = writeval;
+//        }
 
         // for debug purposes
         System.out.println("Result is ready for request with reqid " + reqid);

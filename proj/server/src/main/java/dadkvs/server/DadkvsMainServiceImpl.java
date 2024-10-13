@@ -35,9 +35,20 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
 
         delay(key);
 
-        ArrayList<Integer> list = new ArrayList<>(List.of(key));
-        this.server_state.pendingRequestsReadObserver.put(reqid, responseObserver);
-        addRequestForPaxos(reqid, list);
+        if (key != 0) {
+            ArrayList<Integer> list = new ArrayList<>(List.of(key));
+            this.server_state.pendingRequestsReadObserver.put(reqid, responseObserver);
+            addRequestForPaxos(reqid, list);
+        // read for key 0 -> for reconfiguration reqid is always zero, and Console is the only one that reads and writes to this key
+        } else {
+            VersionedValue vv = this.server_state.store.read(key);
+
+            DadkvsMain.ReadReply response = DadkvsMain.ReadReply.newBuilder()
+                    .setReqid(reqid).setValue(vv.getValue()).setTimestamp(vv.getVersion()).build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
     }
 
     @Override
@@ -105,9 +116,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     }
 
     private void addRequestForPaxos(int reqid, ArrayList<Integer> requestList) {
-        if (this.server_state.orderedRequestsByPaxos.get(reqid) == null) {
-            this.server_state.pendingRequestsForPaxos.add("" + reqid);
-        }
+        this.server_state.addPendingRequestsForPaxos(reqid);
         this.server_state.pendingRequestsData.put(reqid, requestList);
         this.server_state.paxos_loop.wakeup();
         this.server_state.main_loop.wakeup();

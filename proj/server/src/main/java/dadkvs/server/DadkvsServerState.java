@@ -98,23 +98,22 @@ public class DadkvsServerState {
         }
     }
 
-    public boolean inConfiguration() {
-        return my_id >= configuration && my_id < configuration + 3;
-    }
-
-    // If I'm proposer and leader
-    public boolean toProposeValues() {
-        return i_am_leader && inConfiguration();
-    }
-
-    synchronized public void endPaxos(Paxos paxos_instance, int value, int index) {
+    synchronized public void endPaxos(Paxos paxos_instance, int config, int index, int value) {
+        changeConfiguration(value, config);
         pendingRequestsForPaxos.remove("" + value);
         orderedRequestsByPaxos.put(value, index);
         addRequestForProcessing(value, index);
         nextPaxosInstance(paxos_instance, index);
     }
 
-    public void nextPaxosInstance(Paxos paxos_instance, int index) {
+    // value -> reqid
+    private void changeConfiguration(int value, int config) {
+        if (value % 100 == 0 && configuration == config) {
+            configuration = config + 1;
+        }
+    }
+
+    private void nextPaxosInstance(Paxos paxos_instance, int index) {
         paxos_loop.curr_index = index + 1;
         if (paxos_instance.in_paxos_instance) {
             paxos_instance.in_paxos_instance = false;
@@ -128,10 +127,23 @@ public class DadkvsServerState {
         main_loop.wakeup();
     }
 
+    synchronized public void addPendingRequestsForPaxos(int reqid) {
+        if (orderedRequestsByPaxos.get(reqid) == null) {
+            pendingRequestsForPaxos.add("" + reqid);
+        }
+    }
+
     synchronized public Paxos createPaxosInstance(int index) {
         if (paxosInstances.get(index) == null) {
             paxosInstances.put(index, new Paxos(this, index));
         }
         return paxosInstances.get(index);
+    }
+
+    synchronized public Paxos createPaxosInstance(int index, int config) {
+        if (this.configuration < config) {
+            configuration = config;
+        }
+        return createPaxosInstance(index);
     }
 }
