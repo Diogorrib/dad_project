@@ -21,6 +21,7 @@ public class DadkvsServerState {
     Thread          main_loop_worker;
     Thread          paxos_loop_worker;
     int             configuration;
+    Freeze          freeze;
 
     TreeMap<Integer, Paxos> paxosInstances;
 
@@ -52,6 +53,7 @@ public class DadkvsServerState {
         store = new KeyValueStore(kv_size);
 
         configuration = 0;
+        freeze = new Freeze();
         paxosInstances = new TreeMap<>();
         pendingRequestsForPaxos = new ArrayList<>();
         pendingRequestsForProcessing = new TreeMap<>();
@@ -103,7 +105,7 @@ public class DadkvsServerState {
         pendingRequestsForPaxos.remove("" + value);
         orderedRequestsByPaxos.put(value, index);
         addRequestForProcessing(value, index);
-        nextPaxosInstance(paxos_instance, index);
+        nextPaxosInstance(paxos_instance);
     }
 
     // value -> reqid
@@ -113,10 +115,10 @@ public class DadkvsServerState {
         }
     }
 
-    private void nextPaxosInstance(Paxos paxos_instance, int index) {
-        paxos_loop.curr_index = index + 1;
-        if (paxos_instance.in_paxos_instance) {
-            paxos_instance.in_paxos_instance = false;
+    private void nextPaxosInstance(Paxos paxos_instance) {
+        if (!paxos_instance.consensus_reached) {
+            paxos_loop.curr_index++;
+            paxos_instance.consensus_reached = true;
             paxos_instance.wakeup();
         }
         paxos_loop.wakeup();

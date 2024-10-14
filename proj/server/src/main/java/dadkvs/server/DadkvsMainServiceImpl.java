@@ -12,13 +12,11 @@ import java.util.Random;
 public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServiceImplBase {
 
     DadkvsServerState server_state;
-    boolean freezeEnabled;
     boolean delayEnabled;
 
     public DadkvsMainServiceImpl(DadkvsServerState state) {
         this.server_state = state;
         this.delayEnabled = false;
-        this.freezeEnabled = false;
     }
 
     @Override
@@ -26,10 +24,8 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         int reqid = request.getReqid();
         int key = request.getKey();
 
-        if (freeze(key)) {
-            System.out.println("freezed blocking read request:" + request);
-            return;
-        }
+        freeze(key, reqid);
+
         // for debug purposes
         System.out.println("Receiving read request:" + request);
 
@@ -61,10 +57,8 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         int writekey = request.getWritekey();
         int writeval = request.getWriteval();
 
-        if (freeze(writekey)) {
-            System.out.println("freezed blocking commit request:" + request);
-            return;
-        }
+        freeze(writekey, reqid);
+
         // for debug purposes
         System.out.println("Receiving commit request:" + request);
 
@@ -78,17 +72,12 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
         System.out.println("reqid " + reqid + " key1 " + key1 + " v1 " + version1 + " k2 " + key2 + " v2 " + version2 + " wk " + writekey + " writeval " + writeval);
     }
 
-    private boolean freeze(int key) {
+    private void freeze(int key, int reqid) {
         if (key == 0) {
-            return false;
+            return;
         }
 
-        if (this.server_state.debug_mode == 2) {
-            freezeEnabled = true;
-        } else if (this.server_state.debug_mode == 3) {
-            freezeEnabled = false;
-        }
-        return freezeEnabled ;
+        this.server_state.freeze.freeze(reqid);
     }
 
     private void delay(int key) {

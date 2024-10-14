@@ -28,6 +28,11 @@ public class MainLoop implements Runnable {
                 System.out.println("DEBUG MODE 1");
                 DadkvsServer.simulateCrash();
                 break;
+            } else if (this.server_state.debug_mode == 2) {
+                this.server_state.freeze.enabled = true;
+            } else if (this.server_state.debug_mode == 3) {
+                this.server_state.freeze.enabled = false;
+                this.server_state.freeze.wakeup();
             }
         }
     }
@@ -36,12 +41,10 @@ public class MainLoop implements Runnable {
     synchronized public void doWork() {
         System.out.println("Main loop do work start");
 
-        Context.current().fork().run(() -> {
-            Integer reqid = this.server_state.pendingRequestsForProcessing.get(next_to_process);
-            if (reqid != null && this.server_state.pendingRequestsData.get(reqid) != null) {
-                replyToClient(reqid, next_to_process);
-            }
-        });
+        Integer reqid = this.server_state.pendingRequestsForProcessing.get(next_to_process);
+        if (reqid != null && this.server_state.pendingRequestsData.get(reqid) != null) {
+            replyToClient(reqid, next_to_process);
+        }
 
         this.has_work = false;
         while (!this.has_work) {
@@ -98,10 +101,6 @@ public class MainLoop implements Runnable {
         TransactionRecord txrecord = new TransactionRecord(key1, version1, key2, version2, writekey, writeval, this.timestamp);
         boolean result = this.server_state.store.commit(txrecord);
 
-//        //Update configuration attribute on server_state
-//        if (writekey == 0 && result) {
-//            this.server_state.configuration = writeval;
-//        }
 
         // for debug purposes
         System.out.println("Result is ready for request with reqid " + reqid);

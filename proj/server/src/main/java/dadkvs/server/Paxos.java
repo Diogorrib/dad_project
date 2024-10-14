@@ -16,7 +16,7 @@ public class Paxos {
 
     int             index;
     int             timestamp;
-    boolean         in_paxos_instance;
+    boolean         consensus_reached;
     int             configuration;
     int             last_seen_timestamp;
     VersionedValue  last_seen_value;            // (value, timestamp)
@@ -25,9 +25,9 @@ public class Paxos {
     public Paxos(DadkvsServerState state, int index) {
         this.server_state = state;
         this.index = index;
-        this.timestamp = this.server_state.my_id;
-        this.in_paxos_instance = false;
-        configuration = this.server_state.configuration;
+        this.timestamp = state.my_id;
+        this.consensus_reached = false;
+        this.configuration = state.configuration;
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
         this.learn_messages_received = new VersionedValue(0, -1);
@@ -37,23 +37,12 @@ public class Paxos {
         notify();
     }
 
-    private void waitBackoff(BackOff backoff) {
-        long backoff_delay = backoff.calculateBackoffDelay();
-        // for debug purposes
-        System.out.println("Back off: " + backoff_delay + " milliseconds");
-        try {
-            Thread.sleep(backoff_delay);
-        } catch (InterruptedException _) {
-        }
-    }
-
     synchronized public void startPaxos() {
-        this.in_paxos_instance = true;
-        while (this.in_paxos_instance) {
+        while (!this.consensus_reached) {
             //I'm a proposer and leader
             if (toProposeValues()) {
                 proposePaxos();
-                if (toGiveUpFromThisInstance()) {
+                if (this.consensus_reached) {
                     return;
                 }
             }
@@ -66,7 +55,6 @@ public class Paxos {
 
     private void proposePaxos() {
         boolean phasetwo_completed = false;
-        BackOff backoff = new BackOff();
 
         while (!phasetwo_completed) {
             boolean phaseone_completed = false;
@@ -79,18 +67,11 @@ public class Paxos {
                 }
 
                 phaseone_completed = phase1();
-
-                // wait before trying with higher leader value
-                if(!phaseone_completed)
-                    waitBackoff(backoff);
             }
             // for debug purposes
             System.out.println("Phase1 completed");
 
             phasetwo_completed = phase2();
-
-            if(!phasetwo_completed)
-                waitBackoff(backoff);
         }
         // for debug purposes
         System.out.println("Phase2 completed");
@@ -107,7 +88,7 @@ public class Paxos {
     }
 
     private boolean toGiveUpFromThisInstance() {
-        return (!this.in_paxos_instance || !toProposeValues() || this.server_state.pendingRequestsForPaxos.isEmpty());
+        return (this.consensus_reached || !toProposeValues() || this.server_state.pendingRequestsForPaxos.isEmpty());
     }
 
     private void increaseTimestamp(int timestamp) {
@@ -160,7 +141,7 @@ public class Paxos {
                     increaseTimestamp(timestamp);
                     // for debug purposes
                     System.out.println("Phase1 acceptor rejected. Increase timestamp to: " + this.timestamp
-                            + " and try again after backoff");
+                            + " and try again");
                     return false;
                 }
 
@@ -230,7 +211,7 @@ public class Paxos {
                     increaseTimestamp(this.timestamp);
                     // for debug purposes
                     System.out.println("Phase2 acceptor rejected. Increase timestamp to: " + this.timestamp
-                            + " and try again after backoff");
+                            + " and try again");
                     return false;
                 }
             }

@@ -23,6 +23,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void phaseone(DadkvsPaxos.PhaseOneRequest request, StreamObserver<DadkvsPaxos.PhaseOneReply> responseObserver) {
+        if (this.server_state.freeze.enabled) return;
+
         // for debug purposes
         System.out.println("Receive phase1 request: " + request);
 
@@ -63,6 +65,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void phasetwo(DadkvsPaxos.PhaseTwoRequest request, StreamObserver<DadkvsPaxos.PhaseTwoReply> responseObserver) {
+        if (this.server_state.freeze.enabled) return;
+
         // for debug purposes
         System.out.println("Receive phase two request: " + request);
 
@@ -85,9 +89,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .setPhase2Accepted(true)
                     .build();
 
-            Context.current().fork().run(() -> {
-                send4Learners(phase2config, phase2timestamp, phase2index, phase2value);
-            });
+            Context.current().fork().run(() -> send4Learners(phase2config, phase2timestamp, phase2index, phase2value));
         } else {
             // for debug purposes
             System.out.println("Phase2 rejected for index " + phase2index + " and timestamp " + phase2timestamp);
@@ -105,6 +107,8 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void learn(DadkvsPaxos.LearnRequest request, StreamObserver<DadkvsPaxos.LearnReply> responseObserver) {
+        if (this.server_state.freeze.enabled) return;
+
         // For debug purposes
         System.out.println("Receive learn request: " + request);
 
