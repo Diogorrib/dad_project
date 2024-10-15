@@ -88,16 +88,29 @@ public class Paxos {
     }
 
     private boolean toGiveUpFromThisInstance() {
-        return (this.consensus_reached || !toProposeValues() || this.server_state.pendingRequestsForPaxos.isEmpty());
+        return this.consensus_reached || !toProposeValues();
     }
 
     private void increaseTimestamp(int timestamp) {
         this.timestamp = (timestamp / n_servers + 1) * n_servers + this.server_state.my_id;
     }
 
-    public void updateValue(int value, int timestamp) {
-        this.last_seen_value.setValue(value);
+    synchronized public void updateValue(int new_value, int timestamp) {
+        int old_value = this.last_seen_value.getValue();
+        if (old_value > 0 && new_value != old_value) {
+            this.server_state.makeOldValueAvailable(old_value, new_value);
+        }
+        this.last_seen_value.setValue(new_value);
         this.last_seen_value.setVersion(timestamp);
+    }
+
+    synchronized public void checkOldValue() {
+        if (this.last_seen_value.getValue() <= 0) {
+            String reqid = this.server_state.pendingRequestsForPaxos.getFirst();
+            this.server_state.pendingRequestsForPaxos.remove(reqid);
+            this.server_state.ongoingRequestsForPaxos.add(reqid);
+            this.last_seen_value.setValue(Integer.parseInt(reqid));
+        }
     }
 
     private boolean phase1() {
@@ -167,10 +180,6 @@ public class Paxos {
         DadkvsPaxos.PhaseTwoRequest.Builder phasetwo_request = DadkvsPaxos.PhaseTwoRequest.newBuilder();
 
         int value = this.last_seen_value.getValue();
-        if (value == -1) {
-            value = Integer.parseInt(this.server_state.pendingRequestsForPaxos.getFirst());
-        }
-
         updateValue(value, this.timestamp);
 
         phasetwo_request.setPhase2Config(this.configuration)

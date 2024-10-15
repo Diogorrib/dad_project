@@ -2,12 +2,15 @@ package dadkvs.server;
 
 import dadkvs.DadkvsMain;
 import dadkvs.DadkvsPaxosServiceGrpc;
+import io.grpc.Context;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class DadkvsServerState {
     boolean         i_am_leader;
@@ -24,9 +27,11 @@ public class DadkvsServerState {
     Freeze          freeze;
 
     TreeMap<Integer, Paxos> paxosInstances;
+    TreeMap<Integer, Paxos> ongoingPaxosInstances;
 
     // <reqId> -> requests to be decided order in Paxos
     ArrayList<String> pendingRequestsForPaxos;
+    ArrayList<String> ongoingRequestsForPaxos;
 
     // <index, reqId> -> requests ready to be executed (consensus reached for these requests)
     TreeMap<Integer, Integer> pendingRequestsForProcessing;
@@ -54,10 +59,16 @@ public class DadkvsServerState {
 
         configuration = 0;
         freeze = new Freeze();
+
+        // Used for Paxos
         paxosInstances = new TreeMap<>();
+        ongoingPaxosInstances = new TreeMap<>();
         pendingRequestsForPaxos = new ArrayList<>();
-        pendingRequestsForProcessing = new TreeMap<>();
+        ongoingRequestsForPaxos = new ArrayList<>();
         orderedRequestsByPaxos = new TreeMap<>();
+
+        // Requests ready to process and respective data
+        pendingRequestsForProcessing = new TreeMap<>();
         pendingRequestsData = new TreeMap<>();
         pendingRequestsReadObserver = new TreeMap<>();
         pendingRequestsCommitObserver = new TreeMap<>();
@@ -100,9 +111,29 @@ public class DadkvsServerState {
         }
     }
 
+    synchronized public void tryNextValue(int index) {
+        if (!pendingRequestsForPaxos.isEmpty()) {
+            Paxos paxos = createPaxosInstance(index);
+            paxos_loop.curr_index++;
+            paxos.checkOldValue();
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            executor.submit(paxos::startPaxos);
+        }
+    }
+
+    synchronized public void makeOldValueAvailable(int old_value, int new_value) {
+        ongoingRequestsForPaxos.remove("" + old_value);
+        pendingRequestsForPaxos.add("" + old_value);
+        pendingRequestsForPaxos.remove("" + new_value);
+        ongoingRequestsForPaxos.add("" + new_value);
+        paxos_loop.wakeup();
+    }
+
     synchronized public void endPaxos(Paxos paxos_instance, int config, int index, int value) {
         changeConfiguration(value, config);
         pendingRequestsForPaxos.remove("" + value);
+        ongoingRequestsForPaxos.remove("" + value);
+        ongoingPaxosInstances.remove(index);
         orderedRequestsByPaxos.put(value, index);
         addRequestForProcessing(value, index);
         nextPaxosInstance(paxos_instance);
@@ -110,6 +141,7 @@ public class DadkvsServerState {
 
     // value -> reqid
     private void changeConfiguration(int value, int config) {
+        // ConsoleClient has id zero, so it's requests will always be like 100, 200, ...
         if (value % 100 == 0 && configuration == config) {
             configuration = config + 1;
         }
@@ -117,7 +149,7 @@ public class DadkvsServerState {
 
     private void nextPaxosInstance(Paxos paxos_instance) {
         if (!paxos_instance.consensus_reached) {
-            paxos_loop.curr_index++;
+            //paxos_loop.curr_index++;
             paxos_instance.consensus_reached = true;
             paxos_instance.wakeup();
         }
@@ -130,14 +162,18 @@ public class DadkvsServerState {
     }
 
     synchronized public void addPendingRequestsForPaxos(int reqid) {
-        if (orderedRequestsByPaxos.get(reqid) == null) {
+        if (orderedRequestsByPaxos.get(reqid) == null
+                && !pendingRequestsForPaxos.contains("" + reqid)
+                && !ongoingRequestsForPaxos.contains("" + reqid)) {
             pendingRequestsForPaxos.add("" + reqid);
         }
     }
 
     synchronized public Paxos createPaxosInstance(int index) {
         if (paxosInstances.get(index) == null) {
-            paxosInstances.put(index, new Paxos(this, index));
+            Paxos paxos = new Paxos(this, index);
+            paxosInstances.put(index, paxos);
+            ongoingPaxosInstances.put(index, paxos);
         }
         return paxosInstances.get(index);
     }

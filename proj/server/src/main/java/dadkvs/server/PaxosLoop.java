@@ -1,14 +1,13 @@
 package dadkvs.server;
 
+
 public class PaxosLoop implements Runnable {
     DadkvsServerState server_state;
     int curr_index;
-    //Paxos paxos;
 
     public PaxosLoop(DadkvsServerState state) {
         this.server_state = state;
         this.curr_index = 0;
-        //this.paxos = new Paxos(state);
     }
 
     public void run() {
@@ -20,10 +19,7 @@ public class PaxosLoop implements Runnable {
     public void doWork() {
         System.out.println("Paxos loop do work start");
 
-        if (!this.server_state.pendingRequestsForPaxos.isEmpty()) {
-            Paxos paxos = this.server_state.createPaxosInstance(curr_index);
-            paxos.startPaxos();
-        }
+        this.server_state.tryNextValue(curr_index);
 
         synchronized (this) {
             while (this.server_state.pendingRequestsForPaxos.isEmpty()) {
