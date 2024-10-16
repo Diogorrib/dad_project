@@ -21,6 +21,7 @@ public class Paxos {
     int             last_seen_timestamp;
     VersionedValue  last_seen_value;            // (value, timestamp)
     VersionedValue  learn_messages_received;    // (n_responses, timestamp)
+    boolean         stop;
 
     public Paxos(DadkvsServerState state, int index) {
         this.server_state = state;
@@ -31,6 +32,7 @@ public class Paxos {
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
         this.learn_messages_received = new VersionedValue(0, -1);
+        this.stop = false;
     }
 
     synchronized public void wakeup() {
@@ -88,7 +90,7 @@ public class Paxos {
     }
 
     private boolean toGiveUpFromThisInstance() {
-        return this.consensus_reached || !toProposeValues();
+        return this.consensus_reached || !toProposeValues() || this.stop;
     }
 
     private void increaseTimestamp(int timestamp) {

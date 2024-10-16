@@ -112,7 +112,7 @@ public class DadkvsServerState {
     }
 
     synchronized public void tryNextValue(int index) {
-        if (!pendingRequestsForPaxos.isEmpty()) {
+        if (!pendingRequestsForPaxos.isEmpty() && !paxos_loop.stop) {
             Paxos paxos = createPaxosInstance(index);
             paxos_loop.curr_index++;
             paxos.checkOldValue();
@@ -130,7 +130,7 @@ public class DadkvsServerState {
     }
 
     synchronized public void endPaxos(Paxos paxos_instance, int config, int index, int value) {
-        changeConfiguration(value, config);
+        changeConfiguration(value, config, index);
         pendingRequestsForPaxos.remove("" + value);
         ongoingRequestsForPaxos.remove("" + value);
         ongoingPaxosInstances.remove(index);
@@ -140,18 +140,44 @@ public class DadkvsServerState {
     }
 
     // value -> reqid
-    private void changeConfiguration(int value, int config) {
+    private void changeConfiguration(int value, int config, int index) {
         // ConsoleClient has id zero, so it's requests will always be like 100, 200, ...
         if (value % 100 == 0 && configuration == config) {
+            paxos_loop.stop = true;
+            freeze.configuration_change = true;
+            for(Paxos paxos : ongoingPaxosInstances.values()) {
+                while (index < paxos.index && !paxos.consensus_reached) {
+                    try {
+                        wait();
+                    } catch (InterruptedException _) {
+                    }
+                }
+            }
+            ArrayList<String> temp = pendingRequestsForPaxos;
+            pendingRequestsForPaxos = new ArrayList<>();
+            for (int i = index + 1; i < paxos_loop.curr_index; i++) {
+                int reqid = pendingRequestsForProcessing.get(i);
+                //Was decided in the older configuration
+                pendingRequestsForProcessing.remove(i);
+                orderedRequestsByPaxos.remove(reqid);
+
+                pendingRequestsForPaxos.add("" + reqid);
+                paxosInstances.remove(i);
+            }
+            pendingRequestsForPaxos.addAll(temp);
             configuration = config + 1;
+            paxos_loop.stop = false;
+            freeze.configuration_change = false;
+            paxos_loop.wakeup();
+            freeze.wakeup();
         }
     }
 
     private void nextPaxosInstance(Paxos paxos_instance) {
         if (!paxos_instance.consensus_reached) {
-            //paxos_loop.curr_index++;
             paxos_instance.consensus_reached = true;
             paxos_instance.wakeup();
+            notify();
         }
         paxos_loop.wakeup();
     }

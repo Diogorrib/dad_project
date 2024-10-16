@@ -44,7 +44,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .setPhase1Config(phase1config)
                     .setPhase1Index(phase1index)
                     .setPhase1Accepted(true)
-                    .setPhase1Value(paxos_instance.last_seen_value.getValue())  // FIXME: can "propose" a value instead of only agreed ones
+                    .setPhase1Value(paxos_instance.last_seen_value.getValue())
                     .setPhase1Timestamp(paxos_instance.last_seen_value.getVersion())
                     .build();
         } else {
