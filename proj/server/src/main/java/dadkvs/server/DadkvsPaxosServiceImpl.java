@@ -8,6 +8,7 @@ import io.grpc.Context;
 import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
+import java.util.Random;
 
 public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosServiceImplBase {
 
@@ -120,7 +121,13 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         Paxos paxos_instance = this.server_state.createPaxosInstance(learnindex, learnconfig);
 
         // Save request to be processed in case a Majority of servers accepted this request
-        if (updateLearnMessagesReceived(paxos_instance, learntimestamp)) {
+        if (paxos_instance.updateLearnMessagesReceived(learntimestamp)) {
+            Random random = new Random();
+            int randomDelay = 5000 + random.nextInt(10000);
+            try {
+                Thread.sleep(randomDelay);
+            } catch (InterruptedException e) {
+            }
             this.server_state.endPaxos(paxos_instance, learnconfig, learnindex, learnvalue);
         }
 
@@ -135,20 +142,6 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();
-    }
-
-    synchronized private boolean updateLearnMessagesReceived(Paxos paxos_instance, int timestamp) {
-        if (timestamp > paxos_instance.learn_messages_received.getVersion()) {
-            paxos_instance.learn_messages_received.setValue(1);
-            paxos_instance.learn_messages_received.setVersion(timestamp);
-
-        } else if (timestamp == paxos_instance.learn_messages_received.getVersion()) {
-            paxos_instance.learn_messages_received.setValue(paxos_instance.learn_messages_received.getValue() + 1);
-
-            // Save request to be processed in case a Majority of servers accepted this request
-            return paxos_instance.learn_messages_received.getValue() == 2;
-        }
-        return false;
     }
 
     // Acceptor when accepts Phase2 sends ACCEPT to all learners

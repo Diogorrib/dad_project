@@ -16,7 +16,7 @@ public class CollectorStreamObserver<T> implements StreamObserver<T> {
     public void onNext(T value) {
         // Handle the received response of type T
         //System.out.println("Received response: " + value);
-        if (done == false) {
+        if (!done) {
             collector.addResponse(value);
             done = true;
         }
@@ -26,7 +26,14 @@ public class CollectorStreamObserver<T> implements StreamObserver<T> {
     public void onError(Throwable t) {
         // Handle error
         System.err.println("Error occurred: " + t.getMessage());
-        if (done == false) {
+
+        // Log the class name of the exception
+        System.err.println("Error type: " + t.getClass().getName());
+
+        // Log the full stack trace for detailed information
+        t.printStackTrace();
+
+        if (!done) {
             collector.addNoResponse();
             done = true;
         }
@@ -36,7 +43,7 @@ public class CollectorStreamObserver<T> implements StreamObserver<T> {
     public void onCompleted() {
         // Handle stream completion
         //System.out.println("Stream completed");
-        if (done == false) {
+        if (!done) {
             collector.addNoResponse();
             done = true;
         }

@@ -1,6 +1,8 @@
 package dadkvs.server;
 
 
+import io.grpc.Context;
+
 public class PaxosLoop implements Runnable {
     DadkvsServerState server_state;
     int curr_index;
@@ -8,7 +10,6 @@ public class PaxosLoop implements Runnable {
 
     public PaxosLoop(DadkvsServerState state) {
         this.server_state = state;
-        this.curr_index = 0;
         this.stop = false;
     }
 
@@ -21,7 +22,7 @@ public class PaxosLoop implements Runnable {
     public void doWork() {
         System.out.println("Paxos loop do work start");
 
-        this.server_state.tryNextValue(curr_index);
+        this.server_state.tryNextValue();
 
         synchronized (this) {
             while (this.server_state.pendingRequestsForPaxos.isEmpty() || this.stop) {

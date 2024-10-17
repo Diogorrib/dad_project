@@ -6,6 +6,9 @@ import dadkvs.util.GenericResponseCollector;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Optional;
+import java.util.logging.*;
+
 
 public class Paxos {
     DadkvsServerState server_state;
@@ -13,6 +16,28 @@ public class Paxos {
     private static final int n_servers = 5;
     private static final int n_acceptors = 3;
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
+
+    //private static final Logger logger = Logger.getLogger(Paxos.class.getName());
+
+    /*static {
+        // Set a custom formatter to include the method name
+        for (Handler handler : Logger.getLogger("").getHandlers()) {
+            handler.setFormatter(new SimpleFormatter() {
+                private static final String format = "[%1$tF %1$tT] [%2$s] %4$s %5$s %n";
+
+                @Override
+                public synchronized String format(LogRecord lr) {
+                    return String.format(format,
+                            lr.getMillis(),
+                            lr.getSourceClassName() + "." + lr.getSourceMethodName(),
+                            lr.getLoggerName(),
+                            lr.getLevel().getLocalizedName(),
+                            lr.getMessage()
+                    );
+                }
+            });
+        }
+    }*/
 
     int             index;
     int             timestamp;
@@ -22,6 +47,9 @@ public class Paxos {
     VersionedValue  last_seen_value;            // (value, timestamp)
     VersionedValue  learn_messages_received;    // (n_responses, timestamp)
     boolean         stop;
+
+    final Object value_lock = new Object();
+    final Object messages_lock = new Object();
 
     public Paxos(DadkvsServerState state, int index) {
         this.server_state = state;
@@ -39,7 +67,8 @@ public class Paxos {
         notify();
     }
 
-    synchronized public void startPaxos() {
+    public void startPaxos() {
+        System.out.println("STARTING Paxos for index: " + this.index);
         while (!this.consensus_reached) {
             //I'm a proposer and leader
             if (toProposeValues()) {
@@ -48,9 +77,11 @@ public class Paxos {
                     return;
                 }
             }
-            try {
-                wait();
-            } catch (InterruptedException _) {
+            synchronized (this) {
+                try {
+                    wait();
+                } catch (InterruptedException _) {
+                }
             }
         }
     }
@@ -72,6 +103,7 @@ public class Paxos {
             }
             // for debug purposes
             System.out.println("Phase1 completed");
+            System.out.println("PHASE ONE completed for instance: " + this.index);
 
             phasetwo_completed = phase2();
         }
@@ -97,21 +129,42 @@ public class Paxos {
         this.timestamp = (timestamp / n_servers + 1) * n_servers + this.server_state.my_id;
     }
 
-    synchronized public void updateValue(int new_value, int timestamp) {
-        int old_value = this.last_seen_value.getValue();
-        if (old_value > 0 && new_value != old_value) {
-            this.server_state.makeOldValueAvailable(old_value, new_value);
+    public void updateValue(int new_value, int timestamp) {
+        synchronized (this.value_lock) {
+            int old_value = this.last_seen_value.getValue();
+            if (old_value > 0 && new_value != old_value) {
+                this.server_state.makeOldValueAvailable(old_value, new_value);
+            }
+            this.last_seen_value.setValue(new_value);
+            this.last_seen_value.setVersion(timestamp);
         }
-        this.last_seen_value.setValue(new_value);
-        this.last_seen_value.setVersion(timestamp);
     }
 
-    synchronized public void checkOldValue() {
-        if (this.last_seen_value.getValue() <= 0) {
-            String reqid = this.server_state.pendingRequestsForPaxos.getFirst();
-            this.server_state.pendingRequestsForPaxos.remove(reqid);
-            this.server_state.ongoingRequestsForPaxos.add(reqid);
-            this.last_seen_value.setValue(Integer.parseInt(reqid));
+    public void checkOldValue() {
+        synchronized (this.value_lock) {
+            if (this.last_seen_value.getValue() <= 0) {
+                String reqid = this.server_state.pendingRequestsForPaxos.getFirst();
+                this.server_state.pendingRequestsForPaxos.remove(reqid);
+                this.server_state.ongoingRequestsForPaxos.add(reqid);
+                this.last_seen_value.setValue(Integer.parseInt(reqid));
+            }
+        }
+    }
+
+    public boolean updateLearnMessagesReceived(int timestamp) {
+        synchronized (this.messages_lock) {
+            if (this.consensus_reached) return false;
+            if (timestamp > this.learn_messages_received.getVersion()) {
+                this.learn_messages_received.setValue(1);
+                this.learn_messages_received.setVersion(timestamp);
+
+            } else if (timestamp == this.learn_messages_received.getVersion()) {
+                this.learn_messages_received.setValue(this.learn_messages_received.getValue() + 1);
+
+                // Save request to be processed in case a Majority of servers accepted this request
+                return this.learn_messages_received.getValue() == responses_needed;
+            }
+            return false;
         }
     }
 
@@ -162,13 +215,15 @@ public class Paxos {
 
                 int value = phaseone_reply.getPhase1Value();
                 //Got accepted value from previous phase 2, update last_seen_value
-                if (timestamp > this.last_seen_value.getVersion()
-                        && this.server_state.orderedRequestsByPaxos.get(value) == null) {
-                    updateValue(value, timestamp);
+                synchronized (this.value_lock) {
+                    if (timestamp > this.last_seen_value.getVersion()
+                            && this.server_state.orderedRequestsByPaxos.get(value) == null) {
+                        updateValue(value, timestamp);
 
-                    // for debug purposes
-                    System.out.println("Phase1 acceptor already accepted value: "
-                            + value + " with timestamp: " + timestamp);
+                        // for debug purposes
+                        System.out.println("Phase1 acceptor already accepted value: "
+                                + value + " with timestamp: " + timestamp);
+                    }
                 }
             }
             return true;
@@ -180,9 +235,11 @@ public class Paxos {
 
     private boolean phase2() {
         DadkvsPaxos.PhaseTwoRequest.Builder phasetwo_request = DadkvsPaxos.PhaseTwoRequest.newBuilder();
-
-        int value = this.last_seen_value.getValue();
-        updateValue(value, this.timestamp);
+        int value;
+        synchronized (this.value_lock) {
+            value = this.last_seen_value.getValue();
+            updateValue(value, this.timestamp);
+        }
 
         phasetwo_request.setPhase2Config(this.configuration)
                 .setPhase2Index(this.index)
