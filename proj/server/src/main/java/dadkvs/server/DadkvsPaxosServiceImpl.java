@@ -123,7 +123,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         // Save request to be processed in case a Majority of servers accepted this request
         if (paxos_instance.updateLearnMessagesReceived(learntimestamp)) {
             Random random = new Random();
-            int randomDelay = 5000 + random.nextInt(10000);
+            int randomDelay = 2500 + random.nextInt(5000);
             try {
                 Thread.sleep(randomDelay);
             } catch (InterruptedException e) {

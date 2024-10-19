@@ -63,6 +63,7 @@ public class MainLoop implements Runnable {
     }
 
     private void replyToClient(int reqid, int index) {
+        System.out.println("IM: "  + reqid + " AND AT INDEX: " + index + "\t now i will reply to client...");
         ArrayList<Integer> request = this.server_state.pendingRequestsData.get(reqid);
         if (request.size() == 1) {
             readReply(reqid, index, request);
@@ -121,9 +122,11 @@ public class MainLoop implements Runnable {
     private void finishRequestProcess(int reqid, int index) {
         this.server_state.pendingRequestsData.remove(reqid);
         this.server_state.pendingRequestsForProcessing.remove(index);
+        System.out.println("FINISHED: "  + reqid + " AND AT INDEX: " + index + "\t processed the request now i will reply to client...");
         this.next_to_process++;
         if (!this.server_state.pendingRequestsForProcessing.isEmpty()) {
             wakeup();
         }
+
     }
 }

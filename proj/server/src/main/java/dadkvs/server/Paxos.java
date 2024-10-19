@@ -16,29 +16,6 @@ public class Paxos {
     private static final int n_servers = 5;
     private static final int n_acceptors = 3;
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
-
-    //private static final Logger logger = Logger.getLogger(Paxos.class.getName());
-
-    /*static {
-        // Set a custom formatter to include the method name
-        for (Handler handler : Logger.getLogger("").getHandlers()) {
-            handler.setFormatter(new SimpleFormatter() {
-                private static final String format = "[%1$tF %1$tT] [%2$s] %4$s %5$s %n";
-
-                @Override
-                public synchronized String format(LogRecord lr) {
-                    return String.format(format,
-                            lr.getMillis(),
-                            lr.getSourceClassName() + "." + lr.getSourceMethodName(),
-                            lr.getLoggerName(),
-                            lr.getLevel().getLocalizedName(),
-                            lr.getMessage()
-                    );
-                }
-            });
-        }
-    }*/
-
     int             index;
     int             timestamp;
     boolean         consensus_reached;
@@ -46,7 +23,6 @@ public class Paxos {
     int             last_seen_timestamp;
     VersionedValue  last_seen_value;            // (value, timestamp)
     VersionedValue  learn_messages_received;    // (n_responses, timestamp)
-    boolean         stop;
 
     final Object value_lock = new Object();
     final Object messages_lock = new Object();
@@ -60,7 +36,6 @@ public class Paxos {
         this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
         this.learn_messages_received = new VersionedValue(0, -1);
-        this.stop = false;
     }
 
     synchronized public void wakeup() {
@@ -122,7 +97,7 @@ public class Paxos {
     }
 
     private boolean toGiveUpFromThisInstance() {
-        return this.consensus_reached || !toProposeValues() || this.stop;
+        return this.consensus_reached || !toProposeValues();
     }
 
     private void increaseTimestamp(int timestamp) {
