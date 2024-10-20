@@ -54,6 +54,7 @@ public class DadkvsServer {
         server.awaitTermination();
     }
 
+    // Used for debug mode 1
     public static void simulateCrash() {
         if (server != null) {
             try {

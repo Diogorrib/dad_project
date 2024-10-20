@@ -5,8 +5,7 @@ import io.grpc.Context;
 
 public class PaxosLoop implements Runnable {
     DadkvsServerState server_state;
-    int curr_index;
-    boolean stop;
+    boolean stop;   // used during reconfiguration
 
     public PaxosLoop(DadkvsServerState state) {
         this.server_state = state;

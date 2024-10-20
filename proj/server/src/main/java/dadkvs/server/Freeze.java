@@ -2,8 +2,8 @@ package dadkvs.server;
 
 public class Freeze {
 
-    boolean enabled;
-    boolean configuration_change;
+    boolean enabled;                // for debug mode freeze
+    boolean configuration_change;   // to stop paxos during reconfiguration
 
     public Freeze() {
         this.enabled = false;

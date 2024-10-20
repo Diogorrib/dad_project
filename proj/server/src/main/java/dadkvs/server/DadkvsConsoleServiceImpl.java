@@ -28,6 +28,7 @@ public class DadkvsConsoleServiceImpl extends DadkvsConsoleServiceGrpc.DadkvsCon
         // for debug purposes
         System.out.println("I am the leader = " + this.server_state.i_am_leader);
 
+        // if leader changes during paxos instance
         for (Paxos paxos : this.server_state.ongoingPaxosInstances.values()) {
             paxos.wakeup();
         }

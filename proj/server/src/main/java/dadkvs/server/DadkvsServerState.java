@@ -2,20 +2,14 @@ package dadkvs.server;
 
 import dadkvs.DadkvsMain;
 import dadkvs.DadkvsPaxosServiceGrpc;
-import io.grpc.Context;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Handler;
-import java.util.logging.LogRecord;
-import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
 
 public class DadkvsServerState {
     boolean         i_am_leader;
@@ -24,13 +18,16 @@ public class DadkvsServerState {
     int             my_id;
     int             store_size;
     KeyValueStore   store;
+
     MainLoop        main_loop;
     PaxosLoop       paxos_loop;
     Thread          main_loop_worker;
     Thread          paxos_loop_worker;
+
     int             configuration;
     Freeze          freeze;
 
+    // <index, Paxos object>
     TreeMap<Integer, Paxos> paxosInstances;
     TreeMap<Integer, Paxos> ongoingPaxosInstances;
 
@@ -128,15 +125,21 @@ public class DadkvsServerState {
         return index;
     }
 
+    // Create a new paxos instance for the next available index (pending -> ongoing)
     synchronized public void tryNextValue() {
         if (!pendingRequestsForPaxos.isEmpty() && !paxos_loop.stop) {
             Paxos paxos = createPaxosInstance(getActualIndex());
-            paxos.checkOldValue();
+            paxos.reserveValue();
             ExecutorService executor = Executors.newSingleThreadExecutor();
             executor.submit(paxos::startPaxos);
         }
     }
 
+    /*
+    * Suppose we were executing paxos for a given reqid (old_value) with index X, but then another
+    * leader executed paxos for another reqid (new_value) for the same index X. In this case
+    * we will execute new_value for index X and old_value will go back to pendingRequestsForPaxos.
+    */
     synchronized public void makeOldValueAvailable(int old_value, int new_value) {
         ongoingRequestsForPaxos.remove("" + old_value);
         pendingRequestsForPaxos.add("" + old_value);
@@ -145,22 +148,9 @@ public class DadkvsServerState {
         paxos_loop.wakeup();
     }
 
-    synchronized public void endPaxos(Paxos paxos_instance, int config, int index, int value) {
-        System.out.println("ENDING paxos for index: " + index);
-        changeConfiguration(value, config, index);
-        pendingRequestsForPaxos.remove("" + value);
-        ongoingRequestsForPaxos.remove("" + value);
-        ongoingPaxosInstances.remove(index);
-        orderedRequestsByPaxos.put(value, index);
-        addRequestForProcessing(value, index);
-        endPaxosInstance(paxos_instance);
-    }
-
     synchronized private void changeConfiguration(int config) {
         if (freeze.configuration_change) {
-            // resetava valores de acordo com o index da configuracao (tinha de ser guardado este index)
             resetNextInstances(config_change_index + 1);
-            // mudava a configuracao
             configuration = config;
             paxos_loop.stop = false;
             freeze.configuration_change = false;
@@ -174,7 +164,10 @@ public class DadkvsServerState {
     synchronized private void changeConfiguration(int value, int config, int index) {
         // ConsoleClient has id zero, so it's requests will always be like 100, 200, ...
         if (value % 100 == 0 && configuration == config) {
+            System.out.println("Reconfig: stop following paxos instances of index " + index);
             stopPaxos(index);
+            System.out.println("Reconfig: reset following instances of index" + index +
+                    " and change to configuration " + (config+1));
             changeConfiguration(config + 1);
         }
     }
@@ -184,11 +177,11 @@ public class DadkvsServerState {
         freeze.configuration_change = true;
         config_change_index = index;
         ArrayList<Paxos> aux = new ArrayList<>(ongoingPaxosInstances.values());
-        for(Paxos paxos : aux) {    // FIXME: concurrent modification exception
+        for(Paxos paxos : aux) {
             while (index < paxos.index && !paxos.consensus_reached) {
                 if (!freeze.configuration_change) return;
                 try {
-                    wait(); // desbloquear caso receba um idontknow
+                    wait();
                 } catch (InterruptedException _) {
                 }
             }
@@ -200,7 +193,6 @@ public class DadkvsServerState {
         pendingRequestsForPaxos = new ArrayList<>();
         int actual_index = getActualIndex();
         for (int i = index; i < actual_index; i++) {
-            System.out.println("#################################\t" + i + " vs " + actual_index);
             Integer reqid = pendingRequestsForProcessing.get(i);
             //Was decided in the older configuration
             if (reqid != null) {
@@ -216,6 +208,24 @@ public class DadkvsServerState {
         pendingRequestsForPaxos.addAll(temp);
     }
 
+    // Paxos ended, reqid goes from ongoing -> orderedRequests, and it's added to requests ready to be processed
+    synchronized public void endPaxos(Paxos paxos_instance, int config, int index, int value) {
+        System.out.println("Paxos instance " + index + " ending...");
+        changeConfiguration(value, config, index);
+        pendingRequestsForPaxos.remove("" + value);
+        ongoingRequestsForPaxos.remove("" + value);
+        ongoingPaxosInstances.remove(index);
+        orderedRequestsByPaxos.put(value, index);
+        addRequestForProcessing(value, index);
+        endPaxosInstance(paxos_instance);
+        System.out.println("Paxos instance " + index + " ended, consensus reached for value: " + value);
+    }
+
+    synchronized private void addRequestForProcessing(int value, int index) {
+        pendingRequestsForProcessing.put(index, value);
+        main_loop.wakeup();
+    }
+
     synchronized private void endPaxosInstance(Paxos paxos_instance) {
         if (!paxos_instance.consensus_reached) {
             paxos_instance.consensus_reached = true;
@@ -225,16 +235,13 @@ public class DadkvsServerState {
         paxos_loop.wakeup();
     }
 
-    synchronized private void addRequestForProcessing(int value, int index) {
-        pendingRequestsForProcessing.put(index, value);
-        main_loop.wakeup();
-    }
-
     synchronized public void addPendingRequestsForPaxos(int reqid) {
+        // only add the request if it isn't already processed or being processed
         if (orderedRequestsByPaxos.get(reqid) == null
                 && !pendingRequestsForPaxos.contains("" + reqid)
                 && !ongoingRequestsForPaxos.contains("" + reqid)) {
             pendingRequestsForPaxos.add("" + reqid);
+            paxos_loop.wakeup();
         }
     }
 
@@ -249,6 +256,8 @@ public class DadkvsServerState {
         return paxosInstances.get(index);
     }
 
+    //Same as the function before, but updates the current configuration if needed
+    // (used when receives phase1, phase2 or learn requests)
     synchronized public Paxos createPaxosInstance(int index, int config) {
         if (this.configuration < config) {
             changeConfiguration(config);

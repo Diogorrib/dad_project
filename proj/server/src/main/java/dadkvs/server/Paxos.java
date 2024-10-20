@@ -6,17 +6,14 @@ import dadkvs.util.GenericResponseCollector;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.Optional;
-import java.util.logging.*;
 
 
 public class Paxos {
     DadkvsServerState server_state;
-
     private static final int n_servers = 5;
     private static final int n_acceptors = 3;
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
-    int             index;
+    int             index; // Associated to this Paxos Instance
     int             timestamp;
     boolean         consensus_reached;
     int             configuration;
@@ -43,10 +40,8 @@ public class Paxos {
     }
 
     public void startPaxos() {
-        System.out.println("STARTING Paxos for index: " + this.index);
         while (!this.consensus_reached) {
-            //I'm a proposer and leader
-            if (toProposeValues()) {
+            if (toProposeValues()) {    // I'm proposer and leader
                 proposePaxos();
                 if (this.consensus_reached) {
                     return;
@@ -62,14 +57,18 @@ public class Paxos {
     }
 
     private void proposePaxos() {
+
+        System.out.println("I'm a leader and a proposer in this configuration: " + this.configuration +
+                "\nI will start phase1 (index: " + this.index + ") and then, if I succeed, I will start phase2");
         boolean phasetwo_completed = false;
 
         while (!phasetwo_completed) {
             boolean phaseone_completed = false;
+
             if (toGiveUpFromThisInstance()) {
                 return;
-            }
-            while (!phaseone_completed) {
+
+            } while (!phaseone_completed) {
                 if (toGiveUpFromThisInstance()) {
                     return;
                 }
@@ -77,13 +76,12 @@ public class Paxos {
                 phaseone_completed = phase1();
             }
             // for debug purposes
-            System.out.println("Phase1 completed");
-            System.out.println("PHASE ONE completed for instance: " + this.index);
+            System.out.println("Phase1 completed for index: " + this.index);
 
             phasetwo_completed = phase2();
         }
         // for debug purposes
-        System.out.println("Phase2 completed");
+        System.out.println("Phase2 completed for index: " + this.index);
     }
 
     private boolean inConfiguration() {
@@ -96,6 +94,7 @@ public class Paxos {
         return this.server_state.i_am_leader && inConfiguration();
     }
 
+    // If consensus was already reached for this index, or I stopped being a leader
     private boolean toGiveUpFromThisInstance() {
         return this.consensus_reached || !toProposeValues();
     }
@@ -104,6 +103,7 @@ public class Paxos {
         this.timestamp = (timestamp / n_servers + 1) * n_servers + this.server_state.my_id;
     }
 
+    // Update the last seen value, received from other server (the work already done by others)
     public void updateValue(int new_value, int timestamp) {
         synchronized (this.value_lock) {
             int old_value = this.last_seen_value.getValue();
@@ -115,8 +115,9 @@ public class Paxos {
         }
     }
 
-    public void checkOldValue() {
+    public void reserveValue() {
         synchronized (this.value_lock) {
+            // if no value was accepted, reserve value from pending requests from client
             if (this.last_seen_value.getValue() <= 0) {
                 String reqid = this.server_state.pendingRequestsForPaxos.getFirst();
                 this.server_state.pendingRequestsForPaxos.remove(reqid);
@@ -126,9 +127,11 @@ public class Paxos {
         }
     }
 
+    // To keep count of the messages received from learn requests
     public boolean updateLearnMessagesReceived(int timestamp) {
         synchronized (this.messages_lock) {
-            if (this.consensus_reached) return false;
+            if (this.consensus_reached) return false; // avoid doing paxos more than one time
+
             if (timestamp > this.learn_messages_received.getVersion()) {
                 this.learn_messages_received.setValue(1);
                 this.learn_messages_received.setVersion(timestamp);
@@ -173,9 +176,12 @@ public class Paxos {
     }
 
     private boolean processPhase1Replies(ArrayList<DadkvsPaxos.PhaseOneReply> phaseone_responses) {
+
         if (phaseone_responses.size() >= responses_needed) {
             Iterator<DadkvsPaxos.PhaseOneReply> phaseone_iterator = phaseone_responses.iterator();
+
             for (int i = 0; i < responses_needed; i++) {
+
                 DadkvsPaxos.PhaseOneReply phaseone_reply = phaseone_iterator.next();
                 int timestamp = phaseone_reply.getPhase1Timestamp();
 
@@ -183,25 +189,27 @@ public class Paxos {
                 if (!phaseone_reply.getPhase1Accepted()) {
                     increaseTimestamp(timestamp);
                     // for debug purposes
-                    System.out.println("Phase1 acceptor rejected. Increase timestamp to: " + this.timestamp
-                            + " and try again");
+                    System.out.println("Phase1 (index: " + this.index + ") rejected by acceptor. Increase timestamp to: "
+                            + this.timestamp + " and try again");
                     return false;
                 }
 
                 int value = phaseone_reply.getPhase1Value();
+
                 //Got accepted value from previous phase 2, update last_seen_value
                 synchronized (this.value_lock) {
                     if (timestamp > this.last_seen_value.getVersion()
                             && this.server_state.orderedRequestsByPaxos.get(value) == null) {
-                        updateValue(value, timestamp);
 
+                        updateValue(value, timestamp);
                         // for debug purposes
-                        System.out.println("Phase1 acceptor already accepted value: "
+                        System.out.println("Phase1 (index: " + this.index + ") acceptor already accepted value: "
                                 + value + " with timestamp: " + timestamp);
                     }
                 }
             }
             return true;
+
         } else {
             System.out.println("Phase1 ERROR");
             return false;
@@ -244,8 +252,10 @@ public class Paxos {
     }
 
     private boolean processPhase2Replies(ArrayList<DadkvsPaxos.PhaseTwoReply> phasetwo_responses) {
+
         if (phasetwo_responses.size() >= responses_needed) {
             Iterator<DadkvsPaxos.PhaseTwoReply> phasetwo_iterator = phasetwo_responses.iterator();
+
             for (int i = 0; i < responses_needed; i++) {
                 DadkvsPaxos.PhaseTwoReply phasetwo_reply = phasetwo_iterator.next();
 
@@ -253,12 +263,13 @@ public class Paxos {
                 if (!phasetwo_reply.getPhase2Accepted()) {
                     increaseTimestamp(this.timestamp);
                     // for debug purposes
-                    System.out.println("Phase2 acceptor rejected. Increase timestamp to: " + this.timestamp
+                    System.out.println("Phase2 (index: " + this.index + ") acceptor rejected. Increase timestamp to: " + this.timestamp
                             + " and try again");
                     return false;
                 }
             }
             return true;
+
         } else {
             System.out.println("Phase2 ERROR");
             return false;

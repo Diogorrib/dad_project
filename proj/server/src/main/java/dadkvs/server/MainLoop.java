@@ -9,9 +9,8 @@ import java.util.ArrayList;
 public class MainLoop implements Runnable {
     DadkvsServerState server_state;
     int timestamp;  // for key value store
-
     private boolean has_work;
-    private int next_to_process;    //next index to be processed
+    private int next_to_process;    // next index to be processed
 
 
     public MainLoop(DadkvsServerState state) {
@@ -24,12 +23,14 @@ public class MainLoop implements Runnable {
     public void run() {
         while (true) {
             this.doWork();
+
             if (this.server_state.debug_mode == 1) {
-                System.out.println("DEBUG MODE 1");
                 DadkvsServer.simulateCrash();
                 break;
+
             } else if (this.server_state.debug_mode == 2) {
                 this.server_state.freeze.enabled = true;
+
             } else if (this.server_state.debug_mode == 3) {
                 this.server_state.freeze.enabled = false;
                 this.server_state.freeze.wakeup();
@@ -41,6 +42,7 @@ public class MainLoop implements Runnable {
     synchronized public void doWork() {
         System.out.println("Main loop do work start");
 
+        // reply to client if request was already decided by paxos
         Integer reqid = this.server_state.pendingRequestsForProcessing.get(next_to_process);
         if (reqid != null && this.server_state.pendingRequestsData.get(reqid) != null) {
             replyToClient(reqid, next_to_process);
@@ -63,8 +65,9 @@ public class MainLoop implements Runnable {
     }
 
     private void replyToClient(int reqid, int index) {
-        System.out.println("IM: "  + reqid + " AND AT INDEX: " + index + "\t now i will reply to client...");
         ArrayList<Integer> request = this.server_state.pendingRequestsData.get(reqid);
+
+        // Read requests only require the key to be read (size 1)
         if (request.size() == 1) {
             readReply(reqid, index, request);
         } else {
@@ -85,6 +88,8 @@ public class MainLoop implements Runnable {
 
         StreamObserver<DadkvsMain.ReadReply> responseObserver = this.server_state.pendingRequestsReadObserver.get(reqid);
         this.server_state.pendingRequestsReadObserver.remove(reqid);
+
+        System.out.println("Replying to client's READ request with reqid: " + reqid);
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -115,18 +120,19 @@ public class MainLoop implements Runnable {
         StreamObserver<DadkvsMain.CommitReply> responseObserver = this.server_state.pendingRequestsCommitObserver.get(reqid);
         this.server_state.pendingRequestsCommitObserver.remove(reqid);
 
+        System.out.println("Replying to client's WRITE request with reqid: " + reqid);
+
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
 
+    // Ready to process next request
     private void finishRequestProcess(int reqid, int index) {
         this.server_state.pendingRequestsData.remove(reqid);
         this.server_state.pendingRequestsForProcessing.remove(index);
-        System.out.println("FINISHED: "  + reqid + " AND AT INDEX: " + index + "\t processed the request now i will reply to client...");
         this.next_to_process++;
         if (!this.server_state.pendingRequestsForProcessing.isEmpty()) {
             wakeup();
         }
-
     }
 }

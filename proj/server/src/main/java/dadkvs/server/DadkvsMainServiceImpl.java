@@ -73,7 +73,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     }
 
     private void freeze(int key, int reqid) {
-        if (key == 0) {
+        if (key == 0) { // only freeze client requests (consoleclient doesn't freeze)
             return;
         }
 
@@ -81,7 +81,7 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
     }
 
     private void delay(int key) {
-        if (key == 0) {
+        if (key == 0) { // only delay client requests (consoleclient doesn't delay)
             return;
         }
 
@@ -103,11 +103,11 @@ public class DadkvsMainServiceImpl extends DadkvsMainServiceGrpc.DadkvsMainServi
             }
         }
     }
-
+    
+    // Adds the request to decided its order in Paxos (pendingRequestForPaxos)
     private void addRequestForPaxos(int reqid, ArrayList<Integer> requestList) {
         this.server_state.addPendingRequestsForPaxos(reqid);
         this.server_state.pendingRequestsData.put(reqid, requestList);
-        this.server_state.paxos_loop.wakeup();
         this.server_state.main_loop.wakeup();
     }
 }

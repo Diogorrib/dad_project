@@ -15,7 +15,6 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
     DadkvsServerState server_state;
     int n_servers;
 
-
     public DadkvsPaxosServiceImpl(DadkvsServerState state) {
         this.server_state = state;
         this.n_servers = DadkvsServerState.n_servers;
@@ -24,7 +23,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void phaseone(DadkvsPaxos.PhaseOneRequest request, StreamObserver<DadkvsPaxos.PhaseOneReply> responseObserver) {
-        if (this.server_state.freeze.enabled) return;
+        if (this.server_state.freeze.enabled) return;   // relevant for debug mode freeze
 
         // for debug purposes
         System.out.println("Receive phase1 request: " + request);
@@ -34,7 +33,9 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase1timestamp = request.getPhase1Timestamp();
         DadkvsPaxos.PhaseOneReply response;
 
+        // Gets the paxos instance associated with phase1index, if the instance doesn't exist, creates a new one
         Paxos paxos_instance = this.server_state.createPaxosInstance(phase1index, phase1config);
+
         if (phase1timestamp >= paxos_instance.last_seen_timestamp) {
             paxos_instance.last_seen_timestamp = phase1timestamp;
 
@@ -66,10 +67,10 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void phasetwo(DadkvsPaxos.PhaseTwoRequest request, StreamObserver<DadkvsPaxos.PhaseTwoReply> responseObserver) {
-        if (this.server_state.freeze.enabled) return;
+        if (this.server_state.freeze.enabled) return;   // relevant for debug mode freeze
 
         // for debug purposes
-        System.out.println("Receive phase two request: " + request);
+        System.out.println("Received phase two request: " + request);
 
         int phase2config = request.getPhase2Config();
         int phase2index = request.getPhase2Index();
@@ -77,7 +78,9 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase2timestamp = request.getPhase2Timestamp();
         DadkvsPaxos.PhaseTwoReply response;
 
+        // Gets the paxos instance associated with phase2index, if the instance doesn't exist, creates a new one
         Paxos paxos_instance = this.server_state.createPaxosInstance(phase2index, phase2config);
+
         if (phase2timestamp >= paxos_instance.last_seen_timestamp) {
             paxos_instance.updateValue(phase2value, phase2timestamp);
 
@@ -91,6 +94,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
                     .build();
 
             Context.current().fork().run(() -> send4Learners(phase2config, phase2timestamp, phase2index, phase2value));
+
         } else {
             // for debug purposes
             System.out.println("Phase2 rejected for index " + phase2index + " and timestamp " + phase2timestamp);
@@ -108,21 +112,22 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
 
     @Override
     public void learn(DadkvsPaxos.LearnRequest request, StreamObserver<DadkvsPaxos.LearnReply> responseObserver) {
-        if (this.server_state.freeze.enabled) return;
+        if (this.server_state.freeze.enabled) return;   // relevant for debug mode freeze
 
         // For debug purposes
-        System.out.println("Receive learn request: " + request);
+        System.out.println("Received learn request: " + request);
 
         int learnconfig = request.getLearnconfig();
         int learnindex = request.getLearnindex();
         int learnvalue = request.getLearnvalue();
         int learntimestamp = request.getLearntimestamp();
 
+        // Gets the paxos instance associated with learnindex, if the instance doesn't exist, creates a new one
         Paxos paxos_instance = this.server_state.createPaxosInstance(learnindex, learnconfig);
 
         // Save request to be processed in case a Majority of servers accepted this request
         if (paxos_instance.updateLearnMessagesReceived(learntimestamp)) {
-            Random random = new Random();
+            Random random = new Random();   // FIXME: remove later
             int randomDelay = 2500 + random.nextInt(5000);
             try {
                 Thread.sleep(randomDelay);

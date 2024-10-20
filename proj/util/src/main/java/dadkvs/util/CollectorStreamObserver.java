@@ -27,12 +27,6 @@ public class CollectorStreamObserver<T> implements StreamObserver<T> {
         // Handle error
         System.err.println("Error occurred: " + t.getMessage());
 
-        // Log the class name of the exception
-        System.err.println("Error type: " + t.getClass().getName());
-
-        // Log the full stack trace for detailed information
-        t.printStackTrace();
-
         if (!done) {
             collector.addNoResponse();
             done = true;
