@@ -8,7 +8,7 @@ import io.grpc.Context;
 import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
-import java.util.Random;
+import java.util.List;
 
 public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosServiceImplBase {
 
@@ -33,31 +33,46 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase1timestamp = request.getPhase1Timestamp();
         DadkvsPaxos.PhaseOneReply response;
 
-        // Gets the paxos instance associated with phase1index, if the instance doesn't exist, creates a new one
-        Paxos paxos_instance = this.server_state.createPaxosInstance(phase1index, phase1config);
+        if (phase1timestamp >= this.server_state.last_seen_timestamp) {
 
-        if (phase1timestamp >= paxos_instance.last_seen_timestamp) {
-            paxos_instance.last_seen_timestamp = phase1timestamp;
+            this.server_state.last_seen_timestamp = phase1timestamp;
 
+            List<Integer> indexes = new ArrayList<>();
+            List<Integer> values = new ArrayList<>();
+            List<Integer> timestamps = new ArrayList<>();
+
+            //SEND ALL THE INFO I HAVE TO THE NEW LEADER
+            synchronized (this) {
+                for (int i = phase1index; i < this.server_state.last_index_i_have; i++) {
+                    Paxos paxos = this.server_state.paxosInstances.get(i);
+                    if (paxos != null) {
+                        indexes.add(paxos.index);
+                        values.add(paxos.last_seen_value.getValue());
+                        timestamps.add(paxos.last_seen_value.getVersion());
+                    }
+                }
+            }
             // for debug purposes
             System.out.println("Phase1 accepted for index " + phase1index + " and timestamp " + phase1timestamp);
 
             response = DadkvsPaxos.PhaseOneReply.newBuilder()
                     .setPhase1Config(phase1config)
-                    .setPhase1Index(phase1index)
+                    .addAllPhase1Index(indexes)
                     .setPhase1Accepted(true)
-                    .setPhase1Value(paxos_instance.last_seen_value.getValue())
-                    .setPhase1Timestamp(paxos_instance.last_seen_value.getVersion())
+                    .addAllPhase1Value(values)
+                    .addAllPhase1Timestamp(timestamps)
                     .build();
         } else {
             // for debug purposes
             System.out.println("Phase1 rejected for index " + phase1index + " and timestamp " + phase1timestamp);
 
+            // The highest timestamp accepted
+            List<Integer> timestamps = new ArrayList<>(List.of(this.server_state.last_seen_timestamp));
+
             response = DadkvsPaxos.PhaseOneReply.newBuilder()
                     .setPhase1Config(phase1config)
-                    .setPhase1Index(phase1index)
                     .setPhase1Accepted(false)
-                    .setPhase1Timestamp(paxos_instance.last_seen_timestamp)
+                    .addAllPhase1Timestamp(timestamps)
                     .build();
         }
 
@@ -78,34 +93,36 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase2timestamp = request.getPhase2Timestamp();
         DadkvsPaxos.PhaseTwoReply response;
 
-        // Gets the paxos instance associated with phase2index, if the instance doesn't exist, creates a new one
-        Paxos paxos_instance = this.server_state.createPaxosInstance(phase2index, phase2config);
+        synchronized (this) { // FIXME
+            if (phase2timestamp >= this.server_state.last_seen_timestamp) {
 
-        if (phase2timestamp >= paxos_instance.last_seen_timestamp) {
-            paxos_instance.updateValue(phase2value, phase2timestamp);
+                // Gets the paxos instance associated with phase2index, if the instance doesn't exist, creates a new one
+                Paxos paxos_instance = this.server_state.createPaxosInstance(phase2index, phase2config, phase2timestamp);
+                paxos_instance.updateValue(phase2value, phase2timestamp);
+                this.server_state.last_index_i_have = phase2index;
 
-            // for debug purposes
-            System.out.println("Phase2 accepted with value " + phase2value + " for index " + phase2index + " and timestamp " + phase2timestamp);
+                // for debug purposes
+                System.out.println("Phase2 accepted with value " + phase2value + " for index " + phase2index + " and timestamp " + phase2timestamp);
 
-            response = DadkvsPaxos.PhaseTwoReply.newBuilder()
-                    .setPhase2Config(phase2config)
-                    .setPhase2Index(phase2index)
-                    .setPhase2Accepted(true)
-                    .build();
+                response = DadkvsPaxos.PhaseTwoReply.newBuilder()
+                        .setPhase2Config(phase2config)
+                        .setPhase2Index(phase2index)
+                        .setPhase2Accepted(true)
+                        .build();
 
-            Context.current().fork().run(() -> send4Learners(phase2config, phase2timestamp, phase2index, phase2value));
+                Context.current().fork().run(() -> send4Learners(phase2config, phase2timestamp, phase2index, phase2value));
 
-        } else {
-            // for debug purposes
-            System.out.println("Phase2 rejected for index " + phase2index + " and timestamp " + phase2timestamp);
+            } else {
+                // for debug purposes
+                System.out.println("Phase2 rejected for index " + phase2index + " and timestamp " + phase2timestamp);
 
-            response = DadkvsPaxos.PhaseTwoReply.newBuilder()
-                    .setPhase2Config(phase2config)
-                    .setPhase2Index(phase2index)
-                    .setPhase2Accepted(false)
-                    .build();
+                response = DadkvsPaxos.PhaseTwoReply.newBuilder()
+                        .setPhase2Config(phase2config)
+                        .setPhase2Index(phase2index)
+                        .setPhase2Accepted(false)
+                        .build();
+            }
         }
-
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
@@ -123,16 +140,12 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int learntimestamp = request.getLearntimestamp();
 
         // Gets the paxos instance associated with learnindex, if the instance doesn't exist, creates a new one
-        Paxos paxos_instance = this.server_state.createPaxosInstance(learnindex, learnconfig);
+        Paxos paxos_instance = this.server_state.createPaxosInstance(learnindex, learnconfig, learntimestamp);
+        paxos_instance.updateValue(learnvalue, learntimestamp);
+        this.server_state.last_index_i_have = learnindex;
 
         // Save request to be processed in case a Majority of servers accepted this request
         if (paxos_instance.updateLearnMessagesReceived(learntimestamp)) {
-            Random random = new Random();   // FIXME: remove later
-            int randomDelay = 2500 + random.nextInt(5000);
-            try {
-                Thread.sleep(randomDelay);
-            } catch (InterruptedException e) {
-            }
             this.server_state.endPaxos(paxos_instance, learnconfig, learnindex, learnvalue);
         }
 

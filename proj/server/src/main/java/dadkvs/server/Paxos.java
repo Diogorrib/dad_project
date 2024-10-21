@@ -17,20 +17,18 @@ public class Paxos {
     int             timestamp;
     boolean         consensus_reached;
     int             configuration;
-    int             last_seen_timestamp;
     VersionedValue  last_seen_value;            // (value, timestamp)
     VersionedValue  learn_messages_received;    // (n_responses, timestamp)
 
     final Object value_lock = new Object();
     final Object messages_lock = new Object();
 
-    public Paxos(DadkvsServerState state, int index) {
+    public Paxos(DadkvsServerState state, int index, int timestamp) {
         this.server_state = state;
         this.index = index;
-        this.timestamp = state.my_id;
+        this.timestamp = timestamp;
         this.consensus_reached = false;
         this.configuration = state.configuration;
-        this.last_seen_timestamp = 0;
         this.last_seen_value = new VersionedValue(-1, -1);
         this.learn_messages_received = new VersionedValue(0, -1);
     }
@@ -39,83 +37,21 @@ public class Paxos {
         notify();
     }
 
-    public void startPaxos() {
-        while (!this.consensus_reached) {
-            if (toProposeValues()) {    // I'm proposer and leader
-                proposePaxos();
-                if (this.consensus_reached) {
-                    return;
-                }
-            }
-            synchronized (this) {
-                try {
-                    wait();
-                } catch (InterruptedException _) {
-                }
-            }
-        }
-    }
-
-    private void proposePaxos() {
-
-        System.out.println("I'm a leader and a proposer in this configuration: " + this.configuration +
-                "\nI will start phase1 (index: " + this.index + ") and then, if I succeed, I will start phase2");
-        boolean phasetwo_completed = false;
-
-        while (!phasetwo_completed) {
-            boolean phaseone_completed = false;
-
-            if (toGiveUpFromThisInstance()) {
-                return;
-
-            } while (!phaseone_completed) {
-                if (toGiveUpFromThisInstance()) {
-                    return;
-                }
-
-                phaseone_completed = phase1();
-            }
-            // for debug purposes
-            System.out.println("Phase1 completed for index: " + this.index);
-
-            phasetwo_completed = phase2();
-        }
-        // for debug purposes
-        System.out.println("Phase2 completed for index: " + this.index);
-    }
-
-    private boolean inConfiguration() {
-        return (this.server_state.my_id >= this.configuration
-                && this.server_state.my_id < this.configuration + n_acceptors);
-    }
-
-    // If I'm proposer and leader
-    private boolean toProposeValues() {
-        return this.server_state.i_am_leader && inConfiguration();
-    }
-
-    // If consensus was already reached for this index, or I stopped being a leader
-    private boolean toGiveUpFromThisInstance() {
-        return this.consensus_reached || !toProposeValues();
-    }
-
-    private void increaseTimestamp(int timestamp) {
-        this.timestamp = (timestamp / n_servers + 1) * n_servers + this.server_state.my_id;
-    }
-
     // Update the last seen value, received from other server (the work already done by others)
     public void updateValue(int new_value, int timestamp) {
         synchronized (this.value_lock) {
             int old_value = this.last_seen_value.getValue();
-            if (old_value > 0 && new_value != old_value) {
-                this.server_state.makeOldValueAvailable(old_value, new_value);
+            if (new_value != old_value) {
+                if (old_value > 0) {
+                    this.server_state.makeOldValueAvailable(old_value, new_value);
+                }
+                this.last_seen_value.setValue(new_value);
             }
-            this.last_seen_value.setValue(new_value);
             this.last_seen_value.setVersion(timestamp);
         }
     }
 
-    public void reserveValue() {
+    public boolean reserveValue() {
         synchronized (this.value_lock) {
             // if no value was accepted, reserve value from pending requests from client
             if (this.last_seen_value.getValue() <= 0) {
@@ -123,6 +59,21 @@ public class Paxos {
                 this.server_state.pendingRequestsForPaxos.remove(reqid);
                 this.server_state.ongoingRequestsForPaxos.add(reqid);
                 this.last_seen_value.setValue(Integer.parseInt(reqid));
+            }
+            return (this.last_seen_value.getValue() % 100 == 0);
+        }
+    }
+
+    public void updateValueFromPreviousLeader(int value, int timestamp) {
+        //Got accepted value from previous phase 2, update last_seen_value
+        synchronized (this.value_lock) {
+            if (timestamp > this.last_seen_value.getVersion()
+                    && this.server_state.orderedRequestsByPaxos.get(value) == null) {
+
+                updateValue(value, timestamp);
+                // for debug purposes
+                System.out.println("Phase1 (index: " + this.index + ") acceptor already accepted value: "
+                        + value + " with timestamp: " + timestamp);
             }
         }
     }
@@ -146,77 +97,7 @@ public class Paxos {
         }
     }
 
-    private boolean phase1() {
-        DadkvsPaxos.PhaseOneRequest.Builder phaseone_request = DadkvsPaxos.PhaseOneRequest.newBuilder();
-        phaseone_request.setPhase1Config(this.configuration)
-                .setPhase1Index(this.index)
-                .setPhase1Timestamp(this.timestamp);
-
-        //Send request
-        ArrayList<DadkvsPaxos.PhaseOneReply> phaseone_responses = new ArrayList<>();
-        GenericResponseCollector<DadkvsPaxos.PhaseOneReply> phaseone_collector
-                = new GenericResponseCollector<>(phaseone_responses, n_acceptors);
-
-        // for debug purposes
-        System.out.println("Phase1 sending request to all acceptors for index: "
-                + this.index + " and timestamp: " + this.timestamp + "\nWaiting for "
-                + responses_needed + " responses from acceptors");
-
-        // Request is only sent for acceptors
-        for (int i = this.configuration; i < this.configuration + n_acceptors; i++) {
-            CollectorStreamObserver<DadkvsPaxos.PhaseOneReply> phaseone_observer =
-                    new CollectorStreamObserver<>(phaseone_collector);
-            this.server_state.async_stubs[i].phaseone(phaseone_request.build(), phaseone_observer);
-        }
-
-        phaseone_collector.waitForTarget(responses_needed);
-
-        //Process responses for phase 1
-        return processPhase1Replies(phaseone_responses);
-    }
-
-    private boolean processPhase1Replies(ArrayList<DadkvsPaxos.PhaseOneReply> phaseone_responses) {
-
-        if (phaseone_responses.size() >= responses_needed) {
-            Iterator<DadkvsPaxos.PhaseOneReply> phaseone_iterator = phaseone_responses.iterator();
-
-            for (int i = 0; i < responses_needed; i++) {
-
-                DadkvsPaxos.PhaseOneReply phaseone_reply = phaseone_iterator.next();
-                int timestamp = phaseone_reply.getPhase1Timestamp();
-
-                //Phase 1 rejected by one of the acceptors
-                if (!phaseone_reply.getPhase1Accepted()) {
-                    increaseTimestamp(timestamp);
-                    // for debug purposes
-                    System.out.println("Phase1 (index: " + this.index + ") rejected by acceptor. Increase timestamp to: "
-                            + this.timestamp + " and try again");
-                    return false;
-                }
-
-                int value = phaseone_reply.getPhase1Value();
-
-                //Got accepted value from previous phase 2, update last_seen_value
-                synchronized (this.value_lock) {
-                    if (timestamp > this.last_seen_value.getVersion()
-                            && this.server_state.orderedRequestsByPaxos.get(value) == null) {
-
-                        updateValue(value, timestamp);
-                        // for debug purposes
-                        System.out.println("Phase1 (index: " + this.index + ") acceptor already accepted value: "
-                                + value + " with timestamp: " + timestamp);
-                    }
-                }
-            }
-            return true;
-
-        } else {
-            System.out.println("Phase1 ERROR");
-            return false;
-        }
-    }
-
-    private boolean phase2() {
+    public void phase2() {
         DadkvsPaxos.PhaseTwoRequest.Builder phasetwo_request = DadkvsPaxos.PhaseTwoRequest.newBuilder();
         int value;
         synchronized (this.value_lock) {
@@ -248,10 +129,10 @@ public class Paxos {
 
         phasetwo_collector.waitForTarget(responses_needed);
 
-        return processPhase2Replies(phasetwo_responses);
+        processPhase2Replies(phasetwo_responses);
     }
 
-    private boolean processPhase2Replies(ArrayList<DadkvsPaxos.PhaseTwoReply> phasetwo_responses) {
+    private void processPhase2Replies(ArrayList<DadkvsPaxos.PhaseTwoReply> phasetwo_responses) {
 
         if (phasetwo_responses.size() >= responses_needed) {
             Iterator<DadkvsPaxos.PhaseTwoReply> phasetwo_iterator = phasetwo_responses.iterator();
@@ -261,18 +142,15 @@ public class Paxos {
 
                 //Phase 2 rejected by one of the acceptors
                 if (!phasetwo_reply.getPhase2Accepted()) {
-                    increaseTimestamp(this.timestamp);
+                    this.server_state.paxos_loop.prepareAgain();
                     // for debug purposes
-                    System.out.println("Phase2 (index: " + this.index + ") acceptor rejected. Increase timestamp to: " + this.timestamp
-                            + " and try again");
-                    return false;
+                    System.out.println("Phase2 (index: " + this.index + ") acceptor rejected. Increase timestamp to: "
+                            + this.timestamp + " and try again");
+                    break;
                 }
             }
-            return true;
-
         } else {
             System.out.println("Phase2 ERROR");
-            return false;
         }
     }
 }
