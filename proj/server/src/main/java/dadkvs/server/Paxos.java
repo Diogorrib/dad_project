@@ -10,7 +10,6 @@ import java.util.Iterator;
 
 public class Paxos {
     DadkvsServerState server_state;
-    private static final int n_servers = 5;
     private static final int n_acceptors = 3;
     private static final int responses_needed = 2; // Majority of acceptors (2 of 3)
     int             index; // Associated to this Paxos Instance
@@ -33,18 +32,12 @@ public class Paxos {
         this.learn_messages_received = new VersionedValue(0, -1);
     }
 
-    synchronized public void wakeup() {
-        notify();
-    }
-
     // Update the last seen value, received from other server (the work already done by others)
     public void updateValue(int new_value, int timestamp) {
         synchronized (this.value_lock) {
             int old_value = this.last_seen_value.getValue();
             if (new_value != old_value) {
-                if (old_value > 0) {
-                    this.server_state.makeOldValueAvailable(old_value, new_value);
-                }
+                this.server_state.makeOldValueAvailable(old_value, new_value);
                 this.last_seen_value.setValue(new_value);
             }
             this.last_seen_value.setVersion(timestamp);
@@ -145,7 +138,7 @@ public class Paxos {
                     this.server_state.paxos_loop.prepareAgain();
                     // for debug purposes
                     System.out.println("Phase2 (index: " + this.index + ") acceptor rejected. Increase timestamp to: "
-                            + this.timestamp + " and try again");
+                            + this.server_state.paxos_loop.timestamp + " and try again");
                     break;
                 }
             }

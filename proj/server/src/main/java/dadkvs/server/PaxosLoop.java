@@ -66,13 +66,14 @@ public class PaxosLoop implements Runnable {
 
     // If I'm proposer and leader
     private boolean toProposeValues() {
-        return this.server_state.i_am_leader && inConfiguration() &&
-                !this.server_state.pendingRequestsForPaxos.isEmpty() && !this.stop;
+        return this.server_state.i_am_leader && inConfiguration() && !this.stop &&
+                (!this.server_state.pendingRequestsForPaxos.isEmpty() ||
+                  this.server_state.ongoingPaxosInstances.containsKey(this.curr_index));
     }
 
     public void prepareAgain() {
-        phaseone_completed = false;
-        increaseTimestamp(this.timestamp);
+        this.phaseone_completed = false;
+        increaseTimestamp(this.server_state.last_seen_timestamp);
     }
 
     private boolean phase1() {
@@ -133,7 +134,11 @@ public class PaxosLoop implements Runnable {
                     Paxos paxos = this.server_state.createPaxosInstance(phase1indexes.get(j), this.timestamp);
                     paxos.updateValueFromPreviousLeader(phase1values.get(j), phase1timestamps.get(j));
                 }
-                this.server_state.last_index_i_have = phase1indexes.getLast();
+                if (!phase1indexes.isEmpty()) {
+                    int last = phase1indexes.getLast();
+                    if (this.server_state.last_index_i_have < last)
+                        this.server_state.last_index_i_have = last;
+                }
             }
             return true;
 

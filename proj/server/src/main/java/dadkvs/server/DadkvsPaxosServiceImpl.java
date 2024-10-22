@@ -41,9 +41,9 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
             List<Integer> values = new ArrayList<>();
             List<Integer> timestamps = new ArrayList<>();
 
-            //SEND ALL THE INFO I HAVE TO THE NEW LEADER
+            //send all the info I have to the new leader
             synchronized (this) {
-                for (int i = phase1index; i < this.server_state.last_index_i_have; i++) {
+                for (int i = phase1index; i < this.server_state.last_index_i_have + 1; i++) {
                     Paxos paxos = this.server_state.paxosInstances.get(i);
                     if (paxos != null) {
                         indexes.add(paxos.index);
@@ -93,13 +93,10 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int phase2timestamp = request.getPhase2Timestamp();
         DadkvsPaxos.PhaseTwoReply response;
 
-        synchronized (this) { // FIXME
+        synchronized (this) {
             if (phase2timestamp >= this.server_state.last_seen_timestamp) {
 
-                // Gets the paxos instance associated with phase2index, if the instance doesn't exist, creates a new one
-                Paxos paxos_instance = this.server_state.createPaxosInstance(phase2index, phase2config, phase2timestamp);
-                paxos_instance.updateValue(phase2value, phase2timestamp);
-                this.server_state.last_index_i_have = phase2index;
+                Paxos paxos_instance = acknowledgeNewValue(phase2config, phase2timestamp, phase2index, phase2value);
 
                 // for debug purposes
                 System.out.println("Phase2 accepted with value " + phase2value + " for index " + phase2index + " and timestamp " + phase2timestamp);
@@ -139,10 +136,7 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         int learnvalue = request.getLearnvalue();
         int learntimestamp = request.getLearntimestamp();
 
-        // Gets the paxos instance associated with learnindex, if the instance doesn't exist, creates a new one
-        Paxos paxos_instance = this.server_state.createPaxosInstance(learnindex, learnconfig, learntimestamp);
-        paxos_instance.updateValue(learnvalue, learntimestamp);
-        this.server_state.last_index_i_have = learnindex;
+        Paxos paxos_instance = acknowledgeNewValue(learnconfig, learntimestamp, learnindex, learnvalue);
 
         // Save request to be processed in case a Majority of servers accepted this request
         if (paxos_instance.updateLearnMessagesReceived(learntimestamp)) {
@@ -161,6 +155,19 @@ public class DadkvsPaxosServiceImpl extends DadkvsPaxosServiceGrpc.DadkvsPaxosSe
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    synchronized private Paxos acknowledgeNewValue(int config, int timestamp, int index, int value) {
+        // Gets the paxos instance associated with index, if the instance doesn't exist, creates a new one
+        Paxos paxos_instance = this.server_state.createPaxosInstance(index, config, timestamp);
+        if (timestamp > paxos_instance.last_seen_value.getVersion()) {
+            paxos_instance.updateValue(value, timestamp);
+        }
+        if (this.server_state.last_index_i_have < index) {
+            this.server_state.last_index_i_have = index;
+        }
+        return paxos_instance;
+    }
+
 
     // Acceptor when accepts Phase2 sends ACCEPT to all learners
     private void send4Learners(int config, int timestamp, int index, int value) {

@@ -45,9 +45,10 @@ public class MainLoop implements Runnable {
         Integer reqid = this.server_state.pendingRequestsForProcessing.get(next_to_process);
         if (reqid != null && this.server_state.pendingRequestsData.get(reqid) != null) {
             replyToClient(reqid, next_to_process);
+        } else {
+            this.has_work = false;
         }
 
-        this.has_work = false;
         while (!this.has_work) {
             System.out.println("Main loop do work: waiting");
             try {

@@ -37,19 +37,17 @@ public class DadkvsServerState {
     ArrayList<String> pendingRequestsForPaxos;
     ArrayList<String> ongoingRequestsForPaxos;
 
-    // <index, reqId> -> requests ready to be executed (consensus reached for these requests)
-    TreeMap<Integer, Integer> pendingRequestsForProcessing;
-
     // <reqId, index> -> requests for which consensus has already been reached
     TreeMap<Integer, Integer> orderedRequestsByPaxos;
+
+    // <index, reqId> -> requests ready to be executed (consensus reached for these requests)
+    TreeMap<Integer, Integer> pendingRequestsForProcessing;
 
     // the data from pending requests, read = <reqId, [key]> or commit = <reqId, [key1, v1, key2, v2, wKey, wVal]>
     TreeMap<Integer, ArrayList<Integer>> pendingRequestsData;
 
     TreeMap<Integer, StreamObserver<DadkvsMain.ReadReply>> pendingRequestsReadObserver;
     TreeMap<Integer, StreamObserver<DadkvsMain.CommitReply>> pendingRequestsCommitObserver;
-
-    Integer config_change_index;
 
     static final int n_servers = 5;
     ManagedChannel[] channels;
@@ -87,8 +85,6 @@ public class DadkvsServerState {
         main_loop_worker.start();
         paxos_loop_worker = new Thread (paxos_loop);
         paxos_loop_worker.start();
-
-        config_change_index = null;
     }
 
     public void initComms() {
@@ -121,14 +117,7 @@ public class DadkvsServerState {
         }
     }
 
-    synchronized private int getActualIndex() {
-        int index = 0;
-        while (paxosInstances.get(index) != null) {
-            index++;
-        }
-        return index;
-    }
-
+    // last index that I know consensus was reached, so if I'm leader I will try to prepare from this index
     synchronized public int getLastLearnedIndex() {
         int index = 0;
         while (true) {
@@ -141,9 +130,12 @@ public class DadkvsServerState {
 
     // Create a new paxos instance for the next available index (pending -> ongoing)
     synchronized public void tryNextValue(int index, int timestamp) {
-        if (!pendingRequestsForPaxos.isEmpty() && !paxos_loop.stop) {
+        if (!paxos_loop.stop && (!pendingRequestsForPaxos.isEmpty() ||
+                ongoingPaxosInstances.containsKey(paxos_loop.curr_index))) {
+
             Paxos paxos = createPaxosInstance(index, configuration, timestamp);
             paxos_loop.stop = paxos.reserveValue();
+            paxos_loop.curr_index++;
             ExecutorService executor = Executors.newSingleThreadExecutor();
             executor.submit(paxos::phase2);
         }
@@ -167,12 +159,24 @@ public class DadkvsServerState {
         paxos_loop.wakeup();
     }
 
-    synchronized private void changeConfiguration(int config) {
-        if (paxos_loop.stop) {
-            configuration = config;
-            paxos_loop.stop = false;
+    synchronized public void addPendingRequestsForPaxos(int reqid) {
+        // only add the request if it isn't already processed or being processed
+        if (orderedRequestsByPaxos.get(reqid) == null
+                && !pendingRequestsForPaxos.contains("" + reqid)
+                && !ongoingRequestsForPaxos.contains("" + reqid)) {
+            pendingRequestsForPaxos.add("" + reqid);
             paxos_loop.wakeup();
         }
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////// CONFIGURATION ///////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    synchronized private void changeConfiguration(int config) {
+        configuration = config;
+        paxos_loop.stop = false;
+        paxos_loop.wakeup();
     }
 
     // value -> reqid
@@ -182,6 +186,39 @@ public class DadkvsServerState {
             changeConfiguration(config + 1);
         }
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////// CREATE PAXOS INSTANCE ///////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    synchronized public Paxos createPaxosInstance(int index, int timestamp) {
+        Paxos paxos =  paxosInstances.get(index);
+        if (paxos == null) {
+            paxos = new Paxos(this, index, timestamp);
+
+            paxosInstances.put(index, paxos);
+            ongoingPaxosInstances.put(index, paxos);
+        }
+        paxos.timestamp = timestamp;
+        return paxos;
+    }
+
+    //Same as the function before, but updates the current configuration if needed
+    // (used when receives phase1, phase2 or learn requests)
+    synchronized public Paxos createPaxosInstance(int index, int config, int timestamp) {
+        if (this.configuration < config) {
+            changeConfiguration(config);
+        }
+        Paxos paxos = createPaxosInstance(index, timestamp);
+        paxos.configuration = config;
+        return paxos;
+    }
+
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////// FINISH PAXOS INSTANCE ////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
     // Paxos ended, reqid goes from ongoing -> orderedRequests, and it's added to requests ready to be processed
     synchronized public void endPaxos(Paxos paxos_instance, int config, int index, int value) {
@@ -202,43 +239,8 @@ public class DadkvsServerState {
     }
 
     synchronized private void endPaxosInstance(Paxos paxos_instance) {
-        if (!paxos_instance.consensus_reached) {
-            paxos_instance.consensus_reached = true;
-            paxos_instance.wakeup();
-        }
+        paxos_instance.consensus_reached = true;
         paxos_loop.wakeup();
-    }
-
-    synchronized public void addPendingRequestsForPaxos(int reqid) {
-        // only add the request if it isn't already processed or being processed
-        if (orderedRequestsByPaxos.get(reqid) == null
-                && !pendingRequestsForPaxos.contains("" + reqid)
-                && !ongoingRequestsForPaxos.contains("" + reqid)) {
-            pendingRequestsForPaxos.add("" + reqid);
-            paxos_loop.wakeup();
-        }
-    }
-
-    synchronized public Paxos createPaxosInstance(int index, int timestamp) {
-        if (paxosInstances.get(index) == null) {
-
-            Paxos paxos = new Paxos(this, index, timestamp);
-
-            paxosInstances.put(index, paxos);
-            ongoingPaxosInstances.put(index, paxos);
-        }
-        return paxosInstances.get(index);
-    }
-
-    //Same as the function before, but updates the current configuration if needed
-    // (used when receives phase1, phase2 or learn requests)
-    synchronized public Paxos createPaxosInstance(int index, int config, int timestamp) {
-        if (this.configuration < config) {
-            changeConfiguration(config);
-        }
-        Paxos paxos = createPaxosInstance(index, timestamp);
-        paxos.configuration = config;
-        return paxos;
     }
 
 }
