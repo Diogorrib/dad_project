@@ -1,0 +1,18 @@
+**/target/
+
+# LaTeX
+*.aux
+*.bcf
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.bbl
+*.blg
+*.pdf_tex
+*.run.xml
+*.synctex.gz
+*.xdv
+
+# LaTeX Output
+*.pdf
