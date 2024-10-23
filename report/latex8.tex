@@ -50,11 +50,11 @@ luis.maria.calado@tecnico.ulisboa.pt\\
 %------------------------------------------------------------------------- 
 \Section{Introduction}
 
-In this project we implemented DIDA-TKV, a distributed
-transactional key-value store. The developed system is
+In this project we implemented a distributed transactional
+key-value store, called DIDA-TKV. The developed system is
 composed by multiple Servers that work together to ensure
 linearizability while tolerating faults in a minority of
-replicas. To achieve this, our solution relies on the Paxos
+replicas. To achieve this, we used the Paxos
 consensus algorithm to order requests received from clients.
 We assume that a server may crash or "freeze" (while in freeze mode, the
 server will not receive requests from clients nor learn the order
@@ -62,7 +62,7 @@ agreed by other servers). Also, servers may be in slow mode
 (each server can receive requests in a different order).
 Byzantine failures are not tolerated by the system.
 
-This project was implement in Java using asynchronous
+This project was implemented in Java using asynchronous
 programming. The communication between processes was
 achieved using gRPC and the communication protocol was
 established using Protocol Buffers.
@@ -70,7 +70,7 @@ established using Protocol Buffers.
 %------------------------------------------------------------------------- 
 \Section{Paxos}
 
-...
+TODO: mais cenas aqui
 
 Paxos' consensus consists of 2 phases,
 followed by a learn phase of the value agreed.
@@ -93,9 +93,19 @@ can proceed to the following phase.
 
 The role of acceptors in this phase is to promise to the server
 that sent the prepare message, if the leader id is the same or
-bigger than the last they have seen. The promise message lets the
+bigger than the last they have seen. The promise message also lets the
 leader know if any previous leader has proposed a value
-for that instance, so that it can propose it again.
+for that instance, so that it can adopt the previous proposed value.
+So the server will propose that value again, ensuring continuity
+in the consensus process and preventing conflicting proposals.
+
+There is the possibility that the server can be rejected if
+some acceptor already promised to a leader with higher id.
+In this case, the server will increase its id and try again right
+after being rejected. Compared to timeout after rejection,
+this solution can reduce the overall time to reach consensus.
+If the conditions that led to the rejection have changed,
+the server may succeed without waiting for the timeout.
 
 \SubSection{Accept and Accepted}
 
@@ -104,8 +114,11 @@ initiates the second phase of Paxos. In the second phase, the proposer
 sends an accept message to all the acceptors, with the value (requestId) 
 it wants them to accept. The acceptors, upon receiving the accept message,
 check if the proposal number is the same as the one they promised to accept
-and, if so, they accept the value and send a learn message to the learners.
-
+and, if so, they accept the value (sending an accepted message to proposer)
+and send a learn message to the learners.
+Leader knows that second phase is completed if the majority of acceptors
+accept the proposed value. In case of rejection, first phase of Paxos must
+be repeated before trying to propose the value again.
 
 \SubSection{Learn After Consensus}
 
@@ -113,28 +126,43 @@ The learners, upon receiving a majority of learn
 messages, know that consensus was reached, so they can execute
 the request on the key-value store in total order and reply to the client.
 
-\subsection{Design Choices}
+\SubSection{Design Choices}
+
+When the leader id in prepare/accept message is lower, instead of
+ignoring, acceptor informs the server that it was rejected.
+One advantage of the approach is that proposer doesn't have to wait
+for a timeout to infer that it was rejected, allowing the proposer
+to retry phase one with a higher proposal number.
+However, this adds extra messages to the networks and could lead to
+higher network congestion and latency, but rejections are not
+so frequent and the impact on network performance may be minimal in most cases.
+
+Phase one allow proposer to efficiently increase its timestamp by
+receiving the highest timestamp that acceptor has promised to.
 
 %------------------------------------------------------------------------- 
 \Section{Reconfiguration}
 
 WHICH IMPLEMENTATION DID WE USE? STOPPABLE PAXOS?
+TODO: explain consoleClient
 
-Its possible to change at a given time the servers that act as "proposers"
-and "acceptors", for doing so, the consoleClient (EXPLICAR NO INICIO QUE HÁ UMA 
-CONSOLECLIENT) sends a commit message to 
-write in Key 0. Upon receiving the commit message, the server can easily 
-understand that this request is a reconfiguration request, given that only the 
-consoleClient can write on key 0 and that its client id is 0.
+It's possible to change at a given time the servers that act as "proposers"
+and "acceptors", for doing so, the consoleClient sends a commit message to a
+special key (the key 0). Upon receiving the commit message, the server can easily
+understand that this request is a reconfiguration request, given that only the
+consoleClient can write in the special key and that its client id is 0.
 
 Therefore, it's possible to execute a special command, the \textbf{stop command},
 that will stop the next requests from starting Paxos, until the reconfiguration
-is complete. 
+is complete.
 
 For the reconfiguration, the leader/proposer executes Paxos as usual, and after
 consensus is reached, will change the configuration and release the stop 
 command. The other servers, if they accept the new configuration, will also
-proceed to change their own configuration.
+proceed to change their own configuration, learning their new roles for the
+following instances. If server that proposed reconfiguration is rejected,
+it will also release the stop.
+
 %------------------------------------------------------------------------- 
 \Section{Multi-Paxos}
 
@@ -142,163 +170,12 @@ For Multi-Paxos, a proposer can start a new instance of consensus while the
 others are still executing, allowing for multiple instances to be running at the
 same time, and consequently a more efficient system.
 
-Another optimization of multipaxos is that allows that phase1 can be executed
-only once, executing this phase in an only message for multiple instances,
+Another optimization of multipaxos is that allows that prepare can be executed
+only once, executing this phase in a single message for multiple instances,
 [X, infinity]. Then when receives a new request, the proposer only needs to
-execute phase2.
-
-
-%------------------------------------------------------------------------- 
-\SubSection{Printing your paper}
-
-Print your properly formatted text on high-quality, $8.5 \times 11$-inch 
-white printer paper. A4 paper is also acceptable, but please leave the 
-extra 0.5 inch (1.27 cm) at the BOTTOM of the page.
-
-%------------------------------------------------------------------------- 
-\SubSection{Margins and page numbering}
-
-All printed material, including text, illustrations, and charts, must be 
-kept within a print area 6-7/8 inches (17.5 cm) wide by 8-7/8 inches 
-(22.54 cm) high. Do not write or print anything outside the print area. 
-Number your pages lightly, in pencil, on the upper right-hand corners of 
-the BACKS of the pages (for example, 1/10, 2/10, or 1 of 10, 2 of 10, and 
-so forth). Please do not write on the fronts of the pages, nor on the 
-lower halves of the backs of the pages.
-
-
-%------------------------------------------------------------------------ 
-\SubSection{Formatting your paper}
-
-All text must be in a two-column format. The total allowable width of 
-the text area is 6-7/8 inches (17.5 cm) wide by 8-7/8 inches (22.54 cm) 
-high. Columns are to be 3-1/4 inches (8.25 cm) wide, with a 5/16 inch 
-(0.8 cm) space between them. The main title (on the first page) should 
-begin 1.0 inch (2.54 cm) from the top edge of the page. The second and 
-following pages should begin 1.0 inch (2.54 cm) from the top edge. On 
-all pages, the bottom margin should be 1-1/8 inches (2.86 cm) from the 
-bottom edge of the page for $8.5 \times 11$-inch paper; for A4 paper, 
-approximately 1-5/8 inches (4.13 cm) from the bottom edge of the page.
-
-%------------------------------------------------------------------------- 
-\SubSection{Type-style and fonts}
-
-Wherever Times is specified, Times Roman may also be used. If neither is 
-available on your word processor, please use the font closest in 
-appearance to Times that you have access to.
-
-MAIN TITLE. Center the title 1-3/8 inches (3.49 cm) from the top edge of 
-the first page. The title should be in Times 14-point, boldface type. 
-Capitalize the first letter of nouns, pronouns, verbs, adjectives, and 
-adverbs; do not capitalize articles, coordinate conjunctions, or 
-prepositions (unless the title begins with such a word). Leave two blank 
-lines after the title.
-
-AUTHOR NAME(s) and AFFILIATION(s) are to be centered beneath the title 
-and printed in Times 12-point, non-boldface type. This information is to 
-be followed by two blank lines.
-
-The ABSTRACT and MAIN TEXT are to be in a two-column format. 
-
-MAIN TEXT. Type main text in 10-point Times, single-spaced. Do NOT use 
-double-spacing. All paragraphs should be indented 1 pica (approx. 1/6 
-inch or 0.422 cm). Make sure your text is fully justified---that is, 
-flush left and flush right. Please do not place any additional blank 
-lines between paragraphs. Figure and table captions should be 10-point 
-Helvetica boldface type as in
-\begin{figure}[h]
-   \caption{Example of caption.}
-\end{figure}
-
-\noindent Long captions should be set as in 
-\begin{figure}[h] 
-   \caption{Example of long caption requiring more than one line. It is 
-     not typed centered but aligned on both sides and indented with an 
-     additional margin on both sides of 1~pica.}
-\end{figure}
-
-\noindent Callouts should be 9-point Helvetica, non-boldface type. 
-Initially capitalize only the first word of section titles and first-, 
-second-, and third-order headings.
-
-FIRST-ORDER HEADINGS. (For example, {\large \bf 1. Introduction}) 
-should be Times 12-point boldface, initially capitalized, flush left, 
-with one blank line before, and one blank line after.
-
-SECOND-ORDER HEADINGS. (For example, {\elvbf 1.1. Database elements}) 
-should be Times 11-point boldface, initially capitalized, flush left, 
-with one blank line before, and one after. If you require a third-order 
-heading (we discourage it), use 10-point Times, boldface, initially 
-capitalized, flush left, preceded by one blank line, followed by a period 
-and your text on the same line.
-
-%------------------------------------------------------------------------- 
-\SubSection{Footnotes}
-
-Please use footnotes sparingly%
-\footnote
-   {%
-     Or, better still, try to avoid footnotes altogether.  To help your 
-     readers, avoid using footnotes altogether and include necessary 
-     peripheral observations in the text (within parentheses, if you 
-     prefer, as in this sentence).
-   }
-and place them at the bottom of the column on the page on which they are 
-referenced. Use Times 8-point type, single-spaced.
-
-
-%------------------------------------------------------------------------- 
-\SubSection{References}
-
-List and number all bibliographical references in 9-point Times, 
-single-spaced, at the end of your paper. When referenced in the text, 
-enclose the citation number in square brackets, for example~\cite{ex1}. 
-Where appropriate, include the name(s) of editors of referenced books.
-
-%------------------------------------------------------------------------- 
-\SubSection{Illustrations, graphs, and photographs}
-
-All graphics should be centered. Your artwork must be in place in the 
-article (preferably printed as part of the text rather than pasted up). 
-If you are using photographs and are able to have halftones made at a 
-print shop, use a 100- or 110-line screen. If you must use plain photos, 
-they must be pasted onto your manuscript. Use rubber cement to affix the 
-images in place. Black and white, clear, glossy-finish photos are 
-preferable to color. Supply the best quality photographs and 
-illustrations possible. Penciled lines and very fine lines do not 
-reproduce well. Remember, the quality of the book cannot be better than 
-the originals provided. Do NOT use tape on your pages!
-
-%------------------------------------------------------------------------- 
-\SubSection{Color}
-
-The use of color on interior pages (that is, pages other
-than the cover) is prohibitively expensive. We publish interior pages in 
-color only when it is specifically requested and budgeted for by the 
-conference organizers. DO NOT SUBMIT COLOR IMAGES IN YOUR 
-PAPERS UNLESS SPECIFICALLY INSTRUCTED TO DO SO.
-
-%------------------------------------------------------------------------- 
-\SubSection{Symbols}
-
-If your word processor or typewriter cannot produce Greek letters, 
-mathematical symbols, or other graphical elements, please use 
-pressure-sensitive (self-adhesive) rub-on symbols or letters (available 
-in most stationery stores, art stores, or graphics shops).
-
-%------------------------------------------------------------------------ 
-\SubSection{Copyright forms}
-
-You must include your signed IEEE copyright release form when you submit 
-your finished paper. We MUST have this form before your paper can be 
-published in the proceedings.
-
-%------------------------------------------------------------------------- 
-\SubSection{Conclusions}
-
-Please direct any questions to the production editor in charge of these 
-proceedings at the IEEE Computer Society Press: Phone (714) 821-8380, or 
-Fax (714) 761-1784.
+execute second phase of Paxos, after prepare was accepted for the first time.
+Acceptors, when promising to the leader, also send all proposed values
+from previous leader for each instance up to infinity.
 
 %------------------------------------------------------------------------- 
 \nocite{ex1,ex2}
